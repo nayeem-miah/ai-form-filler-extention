@@ -805,16 +805,75 @@
   }
 
   function promptForApiKey() {
+    if (isContextInvalidated()) {
+      alertContextInvalidated();
+      return;
+    }
     const go = confirm(
       'No Gemini API key is configured.\n\nClick OK to open the Options page and add your key.'
     );
     if (go) {
       try {
         chrome.runtime.sendMessage({ type: 'AIFF_OPEN_OPTIONS' });
-      } catch {
-        /* options page fallback handled in background */
+      } catch (err) {
+        if (isInvalidationError(err)) alertContextInvalidated();
+        /* otherwise: options page fallback handled in background */
       }
     }
+  }
+
+  // ---------- Extension context lifecycle ----------
+  // After the extension is reloaded/updated, old page instances lose their
+  // context ("Extension context invalidated") and every chrome.* call throws.
+  // The only remedy is a page refresh — detect it early and say so clearly
+  // instead of showing raw errors.
+
+  function isContextInvalidated() {
+    try {
+      return !(chrome && chrome.runtime && chrome.runtime.id);
+    } catch {
+      return true;
+    }
+  }
+
+  function isInvalidationError(err) {
+    const msg = String((err && err.message) || err || '');
+    return /extension context invalidated|context invalidated|could not establish connection|message port closed/i.test(
+      msg
+    );
+  }
+
+  function alertContextInvalidated() {
+    alert(
+      'The extension was reloaded or updated, so this page lost its connection to it.\n\nPlease refresh this page (Ctrl+R / Cmd+R) and try again — no settings were lost.'
+    );
+  }
+
+  // Drop-in replacement for chrome.runtime.sendMessage that translates
+  // context-invalidation failures into a friendly refresh prompt.
+  // Returns { invalidated: true } instead of throwing for that case.
+  async function sendToBackground(message) {
+    if (isContextInvalidated()) return { invalidated: true };
+    try {
+      return await chrome.runtime.sendMessage(message);
+    } catch (err) {
+      if (isInvalidationError(err)) return { invalidated: true };
+      throw err;
+    }
+  }
+
+  function handleInvalidatedSingle() {
+    setSingleState('error', '⚠️ Reload page');
+    alertContextInvalidated();
+    setTimeout(() => {
+      if (activeField) setSingleState('idle');
+    }, 2500);
+  }
+
+  function handleInvalidatedBatch() {
+    setFillAllState('error', '⚠️ Reload page');
+    alertContextInvalidated();
+    setTimeout(() => setFillAllState('idle'), 2500);
   }
 
   // ---------- Framework-safe value insertion ----------
@@ -1433,10 +1492,19 @@
 
     let response;
     try {
-      response = await chrome.runtime.sendMessage({ type: 'AIFF_FILL', context });
+      response = await sendToBackground({ type: 'AIFF_FILL', context });
     } catch (err) {
+      if (isInvalidationError(err)) {
+        handleInvalidatedSingle();
+        return;
+      }
       setSingleState('error', '⚠️ No response');
       alert(`Extension error: ${(err && err.message) || err}`);
+      return;
+    }
+
+    if (response && response.invalidated) {
+      handleInvalidatedSingle();
       return;
     }
 
@@ -1572,7 +1640,7 @@
     let response;
     try {
       setFillAllState('loading', '⏳ Generating…');
-      response = await chrome.runtime.sendMessage({
+      response = await sendToBackground({
         type: 'AIFF_FILL_ALL',
         payload: {
           fields,
@@ -1580,9 +1648,18 @@
         }
       });
     } catch (err) {
+      if (isInvalidationError(err)) {
+        handleInvalidatedBatch();
+        return;
+      }
       setFillAllState('error', '⚠️ No response');
       alert(`Extension error: ${(err && err.message) || err}`);
       setTimeout(() => setFillAllState('idle'), 2000);
+      return;
+    }
+
+    if (response && response.invalidated) {
+      handleInvalidatedBatch();
       return;
     }
 

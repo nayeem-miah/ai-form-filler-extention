@@ -148,7 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ---- Load saved settings ----
   buildModelOptions(DEFAULT_MODEL);
-  chrome.storage.sync.get(['apiKey', 'model', 'theme'], (result) => {
+  try {
+    chrome.storage.sync.get(['apiKey', 'model', 'theme'], (result) => {
     if (chrome.runtime.lastError) {
       setStatus(`Could not load settings: ${chrome.runtime.lastError.message}`, 'error');
       initTheme(null);
@@ -170,7 +171,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result && (result.apiKey || result.model)) {
       setStatus('Settings loaded from storage.', 'info');
     }
-  });
+    });
+  } catch {
+    setStatus(
+      'The extension was reloaded. Please close and reopen this settings page.',
+      'error'
+    );
+    initTheme(null);
+  }
 
   // ---- Show / Hide toggle (icon button inside the input) ----
   toggleBtn.addEventListener('click', () => {
@@ -246,7 +254,15 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus(`Test failed.${detail}`.slice(0, 600), 'error');
       }
     } catch (err) {
-      setStatus(`Test error: ${(err && err.message) || err}`, 'error');
+      const msg = String((err && err.message) || err || '');
+      if (/extension context invalidated|context invalidated/i.test(msg)) {
+        setStatus(
+          'The extension was reloaded. Please close and reopen this settings page.',
+          'error'
+        );
+      } else {
+        setStatus(`Test error: ${msg}`, 'error');
+      }
     } finally {
       setBusy(false);
     }
