@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "AI Form Filler Assistant",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Single-field AI Fill + Fill All Fields batch form filling with text, select, and custom dropdown support, powered by Google Gemini, OpenAI, or any OpenAI-compatible API (OpenRouter, Groq, Together, DeepSeek, Ollama, local servers).",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "https://api.github.com/*"
   ],
   "optional_host_permissions": [
     "https://*/*",

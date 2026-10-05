@@ -1824,6 +1824,32 @@
     true
   );
 
+  // Hover support: reveal the button when the pointer enters a fillable field,
+  // even before it is focused. `pointerover` bubbles and is paired with
+  // `pointerout` for the matching hide.
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      if (!isFillable(e.target)) return;
+      // Ignore the synthetic events we dispatch while filling.
+      if (isBatchLoading || isSingleLoading) return;
+      showSingleButton(e.target);
+    },
+    true
+  );
+
+  document.addEventListener(
+    'pointerout',
+    (e) => {
+      if (!isFillable(e.target)) return;
+      // Moving within the same field should not dismiss the button.
+      const to = e.relatedTarget;
+      if (to && e.target.contains && e.target.contains(to)) return;
+      scheduleHide();
+    },
+    true
+  );
+
   document.addEventListener(
     'focusout',
     (e) => {

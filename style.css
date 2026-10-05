@@ -319,6 +319,74 @@ html[data-theme="dark"] {
   margin-top: 20px;
 }
 
+/* ---------- Update checker ---------- */
+.aiff-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 20px 0 14px;
+}
+
+.aiff-update-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.aiff-update-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--aiff-muted);
+}
+
+.aiff-btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.aiff-update-result {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--aiff-muted);
+  min-height: 18px;
+  word-break: break-word;
+}
+
+.aiff-update-current {
+  color: var(--aiff-green);
+}
+
+.aiff-update-available {
+  color: var(--text-main);
+  font-weight: 550;
+}
+
+.aiff-update-error {
+  color: var(--aiff-red);
+}
+
+.aiff-update-pending {
+  color: var(--aiff-muted);
+}
+
+.aiff-update-neutral {
+  color: var(--aiff-muted);
+}
+
+.aiff-update-link {
+  color: var(--aiff-indigo);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.aiff-update-link:hover {
+  text-decoration: underline;
+}
+
 /* All three action buttons share one identical outline style */
 .aiff-btn-primary,
 .aiff-btn-ghost,

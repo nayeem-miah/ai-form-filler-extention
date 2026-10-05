@@ -98,6 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelLabelEl = document.getElementById('modelLabel');
   const keyLink = document.getElementById('keyLink');
   const modelsLink = document.getElementById('modelsLink');
+  const updateBtn = document.getElementById('updateBtn');
+  const updateResult = document.getElementById('updateResult');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
   const testBtn = document.getElementById('testBtn');
@@ -581,6 +583,108 @@ function requestHostPermission(url, onResult) {
     if (e.key === 'Enter') {
       e.preventDefault();
       saveBtn.click();
+    }
+  });
+
+  // ---- GitHub update checker ----
+
+  // Parse "v1.2.3" / "1.2.3" / "1.2.3-beta.1" into a comparable tuple.
+  function parseVersion(raw) {
+    const m = String(raw || '').match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!m) return null;
+    return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+  }
+
+  // Returns -1 / 0 / 1 for a vs b.
+  function compareVersions(a, b) {
+    if (!a || !b) return 0;
+    for (const key of ['major', 'minor', 'patch']) {
+      if (a[key] > b[key]) return 1;
+      if (a[key] < b[key]) return -1;
+    }
+    return 0;
+  }
+
+  function currentVersion() {
+    try {
+      return chrome.runtime.getManifest().version;
+    } catch {
+      return '0.0.0';
+    }
+  }
+
+  function setUpdateStatus(kind, text, linkText, linkHref) {
+    updateResult.textContent = '';
+    updateResult.className = `aiff-update-result aiff-update-${kind}`;
+
+    const line = document.createElement('span');
+    line.textContent = text;
+    updateResult.appendChild(line);
+
+    if (linkText && linkHref) {
+      const a = document.createElement('a');
+      a.href = linkHref;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.className = 'aiff-update-link';
+      a.textContent = linkText;
+      updateResult.appendChild(document.createTextNode(' '));
+      updateResult.appendChild(a);
+    }
+  }
+
+  updateBtn.addEventListener('click', async () => {
+    updateBtn.disabled = true;
+    updateBtn.textContent = 'Checking…';
+    setUpdateStatus('pending', 'Checking GitHub for the latest release…');
+
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'AIFF_CHECK_UPDATE' });
+      const installed = currentVersion();
+
+      if (response && response.ok) {
+        const remote = parseVersion(response.tag);
+        const local = parseVersion(installed);
+        const remoteLabel = response.tag.replace(/^v/, '');
+
+        if (remote && compareVersions(remote, local) > 0) {
+          setUpdateStatus(
+            'available',
+            `🚀 New Version Available! (installed v${installed})`,
+            `Download v${remoteLabel}`,
+            response.releaseUrl
+          );
+        } else {
+          setUpdateStatus(
+            'current',
+            `✅ Up to date (v${installed})`,
+            '',
+            ''
+          );
+        }
+      } else if (response && response.error === 'NO_RELEASE') {
+        setUpdateStatus(
+          'neutral',
+          `ℹ️ No published releases yet — you're on the latest (v${installed}).`,
+          'View repository',
+          'https://github.com/nayeem-miah/ai-form-filler-extention'
+        );
+      } else if (response && response.error === 'RATE_LIMITED') {
+        setUpdateStatus('error', '⚠️ GitHub rate limit reached. Try again shortly.', '', '');
+      } else {
+        const detail = response && response.detail ? ` ${response.detail}` : '';
+        setUpdateStatus('error', `⚠️ Could not check for updates.${detail}`.slice(0, 300), '', '');
+      }
+    } catch (err) {
+      const msg = String((err && err.message) || err || '');
+      if (/extension context invalidated|context invalidated/i.test(msg)) {
+        setUpdateStatus('error', '⚠️ Extension reloaded — reopen this page to check again.', '', '');
+      } else {
+        setUpdateStatus('error', `⚠️ Update check failed: ${msg}`.slice(0, 300), '', '');
+      }
+    } finally {
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Check for Updates';
     }
   });
 });

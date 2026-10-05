@@ -716,6 +716,59 @@ async function handleTest(request, sendResponse) {
   }
 }
 
+// ---------- GitHub release update checker ----------
+
+// Point these at your own repository to power the "Check for Updates" button.
+const GITHUB_REPO = { owner: 'nayeen-miah', repo: 'ai-form-filler-extention' };
+const GITHUB_LATEST_RELEASE_URL = `https://api.github.com/repos/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/releases/latest`;
+
+async function handleCheckUpdate(sendResponse) {
+  try {
+    const res = await fetch(GITHUB_LATEST_RELEASE_URL, {
+      method: 'GET',
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+
+    if (res.status === 404) {
+      sendResponse({
+        ok: false,
+        error: 'NO_RELEASE',
+        detail: `No releases published yet in ${GITHUB_REPO.owner}/${GITHUB_REPO.repo}.`
+      });
+      return;
+    }
+    if (res.status === 403 || res.status === 429) {
+      sendResponse({
+        ok: false,
+        error: 'RATE_LIMITED',
+        detail: 'GitHub API rate limit reached. Try again in a few minutes.'
+      });
+      return;
+    }
+    if (!res.ok) {
+      sendResponse({ ok: false, error: 'API_ERROR', detail: `GitHub HTTP ${res.status}.` });
+      return;
+    }
+
+    const data = await res.json();
+    const tag = String(data?.tag_name || '').trim();
+    if (!tag) {
+      sendResponse({ ok: false, error: 'API_ERROR', detail: 'Release tag missing from GitHub response.' });
+      return;
+    }
+    // Only ever hand back a github.com URL.
+    const rawUrl = String(data?.html_url || '');
+    const releaseUrl = /^https:\/\/github\.com\//.test(rawUrl) ? rawUrl : '';
+    sendResponse({ ok: true, tag, releaseUrl, current: chrome.runtime.getManifest().version });
+  } catch (err) {
+    sendResponse({
+      ok: false,
+      error: 'NETWORK_ERROR',
+      detail: String((err && err.message) || err)
+    });
+  }
+}
+
 // ---------- Dynamic toolbar icon (active/idle based on API key) ----------
 
 const ICON_SETS = {
@@ -772,6 +825,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'AIFF_FILL_ALL') {
     handleBatchFill(message.payload || {}, sendResponse);
+    return true;
+  }
+
+  if (message.type === 'AIFF_CHECK_UPDATE') {
+    handleCheckUpdate(sendResponse);
     return true;
   }
 
