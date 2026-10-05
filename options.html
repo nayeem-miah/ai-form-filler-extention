@@ -13,7 +13,7 @@
     <header class="aiff-header">
       <div class="aiff-title-wrap">
         <h1>AI Form Filler</h1>
-        <p class="aiff-subtitle">Gemini-powered form filling</p>
+        <p class="aiff-subtitle">AI-powered form filling</p>
       </div>
       <button id="themeToggle" class="aiff-icon-btn" type="button" aria-label="Switch to dark mode" title="Toggle light / dark mode">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -30,7 +30,13 @@
       <span>Encrypted &amp; Stored Locally</span>
     </div>
 
-    <label class="aiff-label" for="apiKey">API Key</label>
+    <label class="aiff-label" for="providerSelect">Provider</label>
+    <select id="providerSelect" class="aiff-select">
+      <option value="gemini">Google Gemini</option>
+      <option value="openai">OpenAI</option>
+    </select>
+
+    <label class="aiff-label" for="apiKey" id="apiKeyLabel">API Key</label>
     <div class="aiff-input-wrap">
       <input
         id="apiKey"
@@ -60,7 +66,7 @@
     <p id="status" class="aiff-status" role="status" aria-live="polite"></p>
 
     <footer class="aiff-footer">
-      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get a key</a>
+      <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get a Gemini key</a>
       <span aria-hidden="true">·</span>
       <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
     </footer>

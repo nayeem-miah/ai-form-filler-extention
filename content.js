@@ -810,7 +810,7 @@
       return;
     }
     const go = confirm(
-      'No Gemini API key is configured.\n\nClick OK to open the Options page and add your key.'
+      'No API key is configured.\n\nClick OK to open the Options page, pick a provider (Google Gemini or OpenAI), and add your key.'
     );
     if (go) {
       try {

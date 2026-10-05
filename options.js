@@ -1,32 +1,34 @@
 // options.js — settings UI logic (CSP compliant: no inline handlers).
-// The API key + model are persisted via chrome.storage.sync. Theme via
-// chrome.storage.sync too (falls back to OS prefers-color-scheme).
-// Connection tests are routed through background.js (AIFF_TEST) so that
-// ALL Gemini network calls stay in the service worker per project rules.
+// Provider (Gemini / OpenAI) + model + per-provider API keys are persisted
+// via chrome.storage.sync. Theme via chrome.storage.sync too (falls back to
+// OS prefers-color-scheme). Connection tests are routed through
+// background.js (AIFF_TEST) so that ALL network calls stay in the service
+// worker per project rules.
 
-// Mirrors MODEL_GROUPS in background.js (text-output models from
-// https://ai.google.dev/gemini-api/docs/models). background.js additionally
-// accepts any sane `gemini-*` id, so a saved value not in this list still works.
-const MODEL_GROUPS = [
-  { label: 'Recommended', models: ['gemini-2.5-flash'] },
-  {
-    label: 'Stable',
-    models: [
-      'gemini-3.8-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3-flash',
-      'gemini-3.1-flash-lite',
-      'gemini-2.5-flash-lite',
-      'gemini-2.5-pro'
-    ]
+// Mirrors PROVIDERS in background.js. background.js additionally accepts
+// sane future model ids per provider, so a saved value not listed here
+// still works (shown as "(saved)").
+const PROVIDERS = {
+  gemini: {
+    label: 'Google Gemini',
+    models: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    defaultModel: 'gemini-2.5-flash',
+    keyLabel: 'Gemini API Key',
+    keyPlaceholder: 'AIza...',
+    keyLink: 'https://aistudio.google.com/app/apikey',
+    keyLinkText: 'Get a Gemini key'
   },
-  { label: 'Preview', models: ['gemini-3.1-pro-preview'] },
-  { label: 'Legacy', models: ['gemini-1.5-flash', 'gemini-1.5-pro'] }
-];
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+  openai: {
+    label: 'OpenAI',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
+    defaultModel: 'gpt-4o-mini',
+    keyLabel: 'OpenAI API Key',
+    keyPlaceholder: 'sk-...',
+    keyLink: 'https://platform.openai.com/api-keys',
+    keyLinkText: 'Get an OpenAI key'
+  }
+};
+const DEFAULT_PROVIDER = 'gemini';
 const DEFAULT_THEME = 'light';
 
 // Static SVG icon strings (no emojis in the UI; CSP-safe — no code execution).
@@ -39,14 +41,25 @@ const ICON_SUN =
 const ICON_MOON =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 
-function modelLabel(id) {
-  if (id === DEFAULT_MODEL) return `${id} (Recommended)`;
+function normalizeProvider(value) {
+  return value === 'openai' ? 'openai' : DEFAULT_PROVIDER;
+}
+
+function defaultModelFor(provider) {
+  return (PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER]).defaultModel;
+}
+
+function modelLabel(provider, id) {
+  if (id === defaultModelFor(provider)) return `${id} (Recommended)`;
   return id;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const providerSelect = document.getElementById('providerSelect');
+  const apiKeyLabel = document.getElementById('apiKeyLabel');
   const apiKeyInput = document.getElementById('apiKey');
   const modelSelect = document.getElementById('modelSelect');
+  const keyLink = document.getElementById('keyLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
   const testBtn = document.getElementById('testBtn');
@@ -55,20 +68,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusEl = document.getElementById('status');
 
   let statusTimer = 0;
+  let currentProvider = DEFAULT_PROVIDER;
+  // Per-provider keys held in memory; persisted on Save.
+  // Legacy single `apiKey` slot migrates into the Gemini slot on load.
+  const providerKeys = { gemini: '', openai: '' };
 
-  // ---- Build grouped model dropdown ----
-  function buildModelOptions(selected) {
+  // ---- Build model dropdown for a provider ----
+  function buildModelOptions(provider, selected) {
+    const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
     modelSelect.textContent = '';
-    for (const group of MODEL_GROUPS) {
-      const optgroup = document.createElement('optgroup');
-      optgroup.label = group.label;
-      for (const id of group.models) {
-        const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = modelLabel(id);
-        optgroup.appendChild(opt);
-      }
-      modelSelect.appendChild(optgroup);
+    for (const id of catalog.models) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = modelLabel(provider, id);
+      modelSelect.appendChild(opt);
     }
     // Keep a previously-saved (possibly newer) model selectable even if not listed.
     if (selected && ![...modelSelect.options].some((o) => o.value === selected)) {
@@ -77,11 +90,26 @@ document.addEventListener('DOMContentLoaded', () => {
       opt.textContent = `${selected} (saved)`;
       modelSelect.appendChild(opt);
     }
-    if (selected) modelSelect.value = selected;
+    modelSelect.value = selected && [...modelSelect.options].some((o) => o.value === selected)
+      ? selected
+      : catalog.defaultModel;
   }
 
   function currentModel() {
-    return modelSelect.value || DEFAULT_MODEL;
+    return modelSelect.value || defaultModelFor(currentProvider);
+  }
+
+  // ---- Apply provider to the whole form ----
+  function applyProvider(provider, modelToSelect) {
+    currentProvider = normalizeProvider(provider);
+    const catalog = PROVIDERS[currentProvider];
+    providerSelect.value = currentProvider;
+    apiKeyLabel.textContent = catalog.keyLabel;
+    apiKeyInput.placeholder = catalog.keyPlaceholder;
+    apiKeyInput.value = providerKeys[currentProvider] || '';
+    buildModelOptions(currentProvider, modelToSelect || defaultModelFor(currentProvider));
+    keyLink.href = catalog.keyLink;
+    keyLink.textContent = catalog.keyLinkText;
   }
 
   // ---- Theme ----
@@ -146,32 +174,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ---- Load saved settings ----
-  buildModelOptions(DEFAULT_MODEL);
+  // ---- Load saved settings (with legacy single-key migration) ----
+  applyProvider(DEFAULT_PROVIDER, defaultModelFor(DEFAULT_PROVIDER));
   try {
-    chrome.storage.sync.get(['apiKey', 'model', 'theme'], (result) => {
-    if (chrome.runtime.lastError) {
-      setStatus(`Could not load settings: ${chrome.runtime.lastError.message}`, 'error');
-      initTheme(null);
-      setFavicon(false);
-      return;
-    }
-    initTheme(result && result.theme);
-    if (result && typeof result.apiKey === 'string' && result.apiKey) {
-      apiKeyInput.value = result.apiKey;
-      setFavicon(true);
-    } else {
-      setFavicon(false);
-    }
-    buildModelOptions(
-      result && typeof result.model === 'string' && result.model.trim()
-        ? result.model.trim()
-        : DEFAULT_MODEL
+    chrome.storage.sync.get(
+      ['provider', 'model', 'geminiApiKey', 'openaiApiKey', 'apiKey', 'theme'],
+      (result) => {
+        if (chrome.runtime.lastError) {
+          setStatus(`Could not load settings: ${chrome.runtime.lastError.message}`, 'error');
+          initTheme(null);
+          setFavicon(false);
+          return;
+        }
+        const res = result || {};
+        initTheme(res.theme);
+        const provider = normalizeProvider(res.provider);
+        providerKeys.gemini =
+          (typeof res.geminiApiKey === 'string' && res.geminiApiKey.trim()) ||
+          (typeof res.apiKey === 'string' && res.apiKey.trim()) ||
+          '';
+        providerKeys.openai =
+          (typeof res.openaiApiKey === 'string' && res.openaiApiKey.trim()) || '';
+        const savedModel =
+          typeof res.model === 'string' && res.model.trim()
+            ? res.model.trim()
+            : defaultModelFor(provider);
+        applyProvider(provider, savedModel);
+        setFavicon(Boolean(providerKeys[provider]));
+        if (res.provider || res.model || res.geminiApiKey || res.openaiApiKey || res.apiKey) {
+          setStatus('Settings loaded from storage.', 'info');
+        }
+      }
     );
-    if (result && (result.apiKey || result.model)) {
-      setStatus('Settings loaded from storage.', 'info');
-    }
-    });
   } catch {
     setStatus(
       'The extension was reloaded. Please close and reopen this settings page.',
@@ -189,38 +223,79 @@ document.addEventListener('DOMContentLoaded', () => {
     apiKeyInput.focus();
   });
 
-  // ---- Save key + model ----
+  // Model remembered per provider choice: if the user already picked a model
+  // for the newly selected provider in this session, keep it; else default.
+  const lastModelByProvider = {};
+  function currentModelBelongingTo(provider) {
+    if (provider === currentProvider) return currentModel();
+    return lastModelByProvider[provider] || defaultModelFor(provider);
+  }
+
+  // ---- Provider switch (stashes current input, restores the other slot) ----
+  providerSelect.addEventListener('change', () => {
+    providerKeys[currentProvider] = apiKeyInput.value.trim();
+    lastModelByProvider[currentProvider] = currentModel();
+    const next = normalizeProvider(providerSelect.value);
+    applyProvider(next, currentModelBelongingTo(next));
+    chrome.storage.sync.set({ provider: next }, () => {
+      if (chrome.runtime.lastError) {
+        setStatus(`Could not save provider: ${chrome.runtime.lastError.message}`, 'error');
+        return;
+      }
+      setStatus(
+        `Provider set to ${PROVIDERS[next].label}. Paste its key and click Save.`,
+        'info'
+      );
+    });
+  });
+
+  // ---- Save provider + model + key ----
   saveBtn.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
     const model = currentModel();
     if (!key) {
-      setStatus('Please paste your Gemini API key first.', 'error');
+      setStatus(`Please paste your ${PROVIDERS[currentProvider].label} API key first.`, 'error');
       apiKeyInput.focus();
       return;
     }
+    providerKeys[currentProvider] = key;
     setBusy(true, 'Saving…');
-    chrome.storage.sync.set({ apiKey: key, model }, () => {
+    const payload = {
+      provider: currentProvider,
+      model,
+      geminiApiKey: providerKeys.gemini,
+      openaiApiKey: providerKeys.openai
+    };
+    // Legacy mirror: old single `apiKey` slot always reflects the Gemini key.
+    payload.apiKey = providerKeys.gemini;
+    chrome.storage.sync.set(payload, () => {
       setBusy(false);
       if (chrome.runtime.lastError) {
         setStatus(`Save failed: ${chrome.runtime.lastError.message}`, 'error');
         return;
       }
-      setStatus(`Settings saved. Model: ${model}.`, 'success');
+      setStatus(`Settings saved. ${PROVIDERS[currentProvider].label}: ${model}.`, 'success');
       setFavicon(true);
     });
   });
 
-  // ---- Remove key (keeps model + theme) ----
+  // ---- Remove current provider key (keeps model + theme + other key) ----
   clearBtn.addEventListener('click', () => {
     setBusy(true, 'Saving…');
-    chrome.storage.sync.remove('apiKey', () => {
+    providerKeys[currentProvider] = '';
+    apiKeyInput.value = '';
+    const payload = { geminiApiKey: providerKeys.gemini, openaiApiKey: providerKeys.openai };
+    payload.apiKey = providerKeys.gemini;
+    chrome.storage.sync.set(payload, () => {
       setBusy(false);
       if (chrome.runtime.lastError) {
         setStatus(`Remove failed: ${chrome.runtime.lastError.message}`, 'error');
         return;
       }
-      apiKeyInput.value = '';
-      setStatus('API key removed. Model and theme kept.', 'info');
+      setStatus(
+        `${PROVIDERS[currentProvider].label} key removed. Other settings kept.`,
+        'info'
+      );
       setFavicon(false);
     });
   });
@@ -235,10 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     setBusy(true);
-    setStatus(`Testing ${model}…`, 'info');
+    setStatus(`Testing ${PROVIDERS[currentProvider].label} ${model}…`, 'info');
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'AIFF_TEST',
+        provider: currentProvider,
         apiKey: key,
         model
       });
@@ -271,6 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ---- Persist model immediately on change (key untouched) ----
   modelSelect.addEventListener('change', () => {
     const model = currentModel();
+    lastModelByProvider[currentProvider] = model;
     chrome.storage.sync.set({ model }, () => {
       if (chrome.runtime.lastError) {
         setStatus(`Could not save model: ${chrome.runtime.lastError.message}`, 'error');

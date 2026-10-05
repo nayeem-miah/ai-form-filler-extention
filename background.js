@@ -1,54 +1,67 @@
 // background.js — MV3 Service Worker (module)
-// All Gemini API calls live here (avoids CORS, keeps API key out of content scripts).
+// All LLM API calls live here (avoids CORS, keeps API keys out of content scripts).
 // Supports: single-field fill, batch form fill (JSON), connection test, open options.
+// Providers: Google Gemini and OpenAI — routed by the user's saved `provider`.
 
-// Text-output models from https://ai.google.dev/gemini-api/docs/models
-// (audio/TTS, Live, image/video-generation and embedding models excluded —
-// they don't return plain text for form filling).
-// Grouped for the options UI; validation below is pattern-based so newly
-// released `gemini-*` models keep working without an extension update.
-const MODEL_GROUPS = [
-  { label: 'Recommended', models: ['gemini-2.5-flash'] },
-  {
-    label: 'Stable',
-    models: [
-      'gemini-3.8-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3-flash',
-      'gemini-3.1-flash-lite',
-      'gemini-2.5-flash-lite',
-      'gemini-2.5-pro'
-    ]
+// Per-provider catalogs shown in the options UI.
+const PROVIDERS = {
+  gemini: {
+    label: 'Google Gemini',
+    models: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    defaultModel: 'gemini-2.5-flash'
   },
-  { label: 'Preview', models: ['gemini-3.1-pro-preview'] },
-  { label: 'Legacy', models: ['gemini-1.5-flash', 'gemini-1.5-pro'] }
-];
-const SUPPORTED_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
-const DEFAULT_MODEL = 'gemini-2.5-flash';
-
-// Allowlist + safe-pattern fallback: accept any sane `gemini-*`-style id so
-// future docs models work even before SUPPORTED_MODELS is updated.
-function normalizeModel(value) {
-  if (typeof value === 'string') {
-    const v = value.trim();
-    if (SUPPORTED_MODELS.includes(v)) return v;
-    if (/^[a-z0-9][a-z0-9._:-]{2,64}$/i.test(v) && /gemini/i.test(v)) return v;
+  openai: {
+    label: 'OpenAI',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
+    defaultModel: 'gpt-4o-mini'
   }
-  return DEFAULT_MODEL;
+};
+const DEFAULT_PROVIDER = 'gemini';
+
+function normalizeProvider(value) {
+  return value === 'openai' ? 'openai' : DEFAULT_PROVIDER;
 }
 
-const endpointFor = (model, apiKey) =>
+// Allowlist + safe-pattern fallback: accept listed models plus any sane
+// future id for that provider (gemini-*, gpt-*, o-series, chatgpt-*).
+function normalizeModel(provider, value) {
+  const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
+  if (typeof value === 'string') {
+    const v = value.trim();
+    if (catalog.models.includes(v)) return v;
+    if (/^[a-z0-9][a-z0-9._:-]{2,64}$/i.test(v)) {
+      if (provider === 'openai' && /^(gpt-|chatgpt-|o\d)/i.test(v)) return v;
+      if (provider === 'gemini' && /gemini/i.test(v)) return v;
+    }
+  }
+  return catalog.defaultModel;
+}
+
+const geminiEndpointFor = (model, apiKey) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+
+function cleanKey(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
 async function getSettings() {
-  const stored = await chrome.storage.sync.get(['apiKey', 'model']);
+  const stored = await chrome.storage.sync.get([
+    'provider',
+    'model',
+    'geminiApiKey',
+    'openaiApiKey',
+    'apiKey' // legacy single-key slot (always Gemini) — migrated on read
+  ]);
+  const provider = normalizeProvider(stored.provider);
+  const legacyKey = cleanKey(stored.apiKey);
   const apiKey =
-    typeof stored.apiKey === 'string' && stored.apiKey.trim() ? stored.apiKey.trim() : '';
-  const model = normalizeModel(stored.model);
-  return { apiKey, model };
+    provider === 'openai'
+      ? cleanKey(stored.openaiApiKey)
+      : cleanKey(stored.geminiApiKey) || legacyKey;
+  const model = normalizeModel(provider, stored.model);
+  return { provider, apiKey, model };
 }
 
 function extractText(data) {
@@ -93,7 +106,7 @@ function extractJsonObjectSubstring(text) {
 }
 
 async function callGemini({ apiKey, model, prompt, temperature, maxOutputTokens }) {
-  const res = await fetch(endpointFor(model, apiKey), {
+  const res = await fetch(geminiEndpointFor(model, apiKey), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -154,6 +167,92 @@ async function callGemini({ apiKey, model, prompt, temperature, maxOutputTokens 
   }
 
   return { ok: true, text, model };
+}
+
+async function callOpenAI({ apiKey, model, prompt, temperature, maxOutputTokens }) {
+  const res = await fetch(OPENAI_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an AI form-filling assistant. Follow the user instructions exactly, especially the STRICT OUTPUT RULES.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: typeof temperature === 'number' ? temperature : 0.7,
+      max_tokens: maxOutputTokens || 1024
+    })
+  });
+
+  if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) {
+    let detail = '';
+    try {
+      const errJson = await res.json();
+      detail = errJson?.error?.message || JSON.stringify(errJson);
+    } catch {
+      try {
+        detail = await res.text();
+      } catch {
+        detail = '';
+      }
+    }
+    return {
+      ok: false,
+      error: 'API_ERROR',
+      detail: `OpenAI rejected the request (HTTP ${res.status}, model ${model}). ${detail}`.slice(0, 1500)
+    };
+  }
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = await res.text();
+    } catch {
+      detail = '';
+    }
+    return {
+      ok: false,
+      error: 'API_ERROR',
+      detail: `OpenAI HTTP ${res.status} (model ${model}): ${detail}`.slice(0, 1500)
+    };
+  }
+
+  const data = await res.json();
+  let text = '';
+  try {
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === 'string') text = content.trim();
+  } catch {
+    text = '';
+  }
+
+  if (!text) {
+    const finishReason = data?.choices?.[0]?.finish_reason || '';
+    return {
+      ok: false,
+      error: 'EMPTY_RESPONSE',
+      detail: finishReason
+        ? `Model ${model} returned no text (finish_reason: ${finishReason}).`
+        : `Model ${model} returned no text.`
+    };
+  }
+
+  return { ok: true, text, model };
+}
+
+// Provider router — single entry point for all LLM calls.
+async function callLLM({ provider, apiKey, model, prompt, temperature, maxOutputTokens }) {
+  if (provider === 'openai') {
+    return callOpenAI({ apiKey, model, prompt, temperature, maxOutputTokens });
+  }
+  return callGemini({ apiKey, model, prompt, temperature, maxOutputTokens });
 }
 
 // ---------- Prompt builders ----------
@@ -270,13 +369,14 @@ function generateFullFormSuggestion(fields, pageMeta) {
 // ---------- Handlers ----------
 
 async function handleSingleFill(context, sendResponse) {
-  const { apiKey, model } = await getSettings();
+  const { provider, apiKey, model } = await getSettings();
   if (!apiKey) {
     sendResponse({ ok: false, error: 'NO_API_KEY' });
     return;
   }
   try {
-    const result = await callGemini({
+    const result = await callLLM({
+      provider,
       apiKey,
       model,
       prompt: buildSinglePrompt(context || {}),
@@ -298,7 +398,7 @@ async function handleSingleFill(context, sendResponse) {
 }
 
 async function handleBatchFill(payload, sendResponse) {
-  const { apiKey, model } = await getSettings();
+  const { provider, apiKey, model } = await getSettings();
   if (!apiKey) {
     sendResponse({ ok: false, error: 'NO_API_KEY' });
     return;
@@ -311,7 +411,8 @@ async function handleBatchFill(payload, sendResponse) {
   // Cap batch size to keep prompts bounded.
   const capped = fields.slice(0, 40);
   try {
-    const result = await callGemini({
+    const result = await callLLM({
+      provider,
       apiKey,
       model,
       prompt: generateFullFormSuggestion(capped, payload?.page),
@@ -362,22 +463,29 @@ async function handleBatchFill(payload, sendResponse) {
   }
 }
 
-async function handleTest(requestedModel, sendResponse) {
-  const { apiKey, model: storedModel } = await getSettings();
-  const keyToTest = typeof requestedModel?.apiKey === 'string' && requestedModel.apiKey.trim()
-    ? requestedModel.apiKey.trim()
-    : apiKey;
+async function handleTest(request, sendResponse) {
+  const { provider: storedProvider, apiKey, model: storedModel } = await getSettings();
+  const provider = normalizeProvider(request?.provider || storedProvider);
+  const keyToTest =
+    typeof request?.apiKey === 'string' && request.apiKey.trim()
+      ? request.apiKey.trim()
+      : provider === storedProvider
+        ? apiKey
+        : '';
   const modelToTest =
-    requestedModel?.model && requestedModel.model.trim()
-      ? normalizeModel(requestedModel.model)
-      : storedModel;
+    request?.model && request.model.trim()
+      ? normalizeModel(provider, request.model)
+      : provider === storedProvider
+        ? storedModel
+        : normalizeModel(provider, '');
 
   if (!keyToTest) {
     sendResponse({ ok: false, error: 'NO_API_KEY', detail: 'Paste an API key first.' });
     return;
   }
   try {
-    const result = await callGemini({
+    const result = await callLLM({
+      provider,
       apiKey: keyToTest,
       model: modelToTest,
       prompt: 'Reply with the single word: ok',
@@ -407,7 +515,7 @@ const ICON_SETS = {
 
 async function refreshActionIcon() {
   try {
-    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    const { apiKey } = await getSettings();
     const hasKey = typeof apiKey === 'string' && apiKey.trim().length > 0;
     await chrome.action.setIcon({ path: hasKey ? ICON_SETS.active : ICON_SETS.idle });
   } catch {
@@ -416,7 +524,13 @@ async function refreshActionIcon() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes && Object.hasOwn(changes, 'apiKey')) {
+  if (
+    area === 'sync' &&
+    changes &&
+    (Object.hasOwn(changes, 'apiKey') ||
+      Object.hasOwn(changes, 'geminiApiKey') ||
+      Object.hasOwn(changes, 'openaiApiKey'))
+  ) {
     refreshActionIcon();
   }
 });
@@ -451,7 +565,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'AIFF_TEST') {
-    handleTest({ apiKey: message.apiKey, model: message.model }, sendResponse);
+    handleTest(
+      { provider: message.provider, apiKey: message.apiKey, model: message.model },
+      sendResponse
+    );
     return true;
   }
 
