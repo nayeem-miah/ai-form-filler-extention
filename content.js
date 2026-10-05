@@ -846,18 +846,54 @@
   // then dispatch change + input so React/Vue/Angular detect it.
   // Strict: with NO match the select is left untouched (return false) —
   // never auto-pick an unrelated option.
-  function setSelectValue(selectEl, target) {
+  function meaningfulOptions(selectEl) {
+    try {
+      return [...selectEl.options].filter(
+        (o) => !o.disabled && (String(o.value).trim() !== '' || cleanOptionText(o.text).length > 0)
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function describeOptions(selectEl, max = 6) {
+    try {
+      return [...selectEl.options]
+        .slice(0, max)
+        .map((o) => {
+          const v = String(o.value);
+          const t = cleanOptionText(o.text, 40);
+          return v && v !== t ? `${v} (${t})` : t || `(value:${v})`;
+        })
+        .join(' | ');
+    } catch {
+      return '';
+    }
+  }
+
+  async function setSelectValue(selectEl, target) {
     const t = normalizeChoice(target);
     if (!t) return false;
-    const opts = [...selectEl.options];
-    const match =
-      opts.find((o) => normalizeChoice(o.value) === t) ||
-      opts.find((o) => normalizeChoice(o.text) === t) ||
-      opts.find(
-        (o) => normalizeChoice(o.text).includes(t) || normalizeChoice(o.value).includes(t)
-      ) ||
-      null;
-    if (!match || match.disabled) return false;
+    // Dependent dropdowns (Country → State): options may populate only after
+    // an earlier field is filled. Wait briefly for meaningful options.
+    let opts = meaningfulOptions(selectEl);
+    if (opts.length === 0) {
+      const start = Date.now();
+      while (opts.length === 0 && Date.now() - start < 2000) {
+        await sleep(250);
+        opts = meaningfulOptions(selectEl);
+      }
+    }
+    // Reuse the same matcher as custom dropdowns (exact → partial → tokens).
+    // HTMLOptionElement supports getAttribute/innerText like our row nodes.
+    const match = matchNode(opts, t);
+    if (!match || match.disabled) {
+      debug('select no match', {
+        wanted: String(target).slice(0, 80),
+        available: describeOptions(selectEl)
+      });
+      return false;
+    }
     const chosen = match;
     try {
       selectEl.focus();
@@ -1089,8 +1125,21 @@
 
   function matchNode(nodes, t) {
     const byText = (n) => normalizeChoice(n.innerText || n.textContent);
-    const byValue = (n) =>
-      normalizeChoice(n.getAttribute('data-value') || n.getAttribute('data-option-value'));
+    // Native <option> elements expose .value (IDL); custom rows use
+    // data-value / data-option-value attributes.
+    const byValue = (n) => {
+      let v = '';
+      try {
+        v =
+          (n.getAttribute &&
+            (n.getAttribute('data-value') || n.getAttribute('data-option-value'))) ||
+          '';
+        if (!v && n && typeof n.value === 'string') v = n.value;
+      } catch {
+        v = '';
+      }
+      return normalizeChoice(v);
+    };
     const exact =
       nodes.find((n) => byValue(n) === t || byText(n) === t);
     if (exact) return exact;
@@ -1308,6 +1357,11 @@
     try {
       const label = resolveLabel(el);
       if (label) return label.slice(0, 60);
+      // Native selects often have no label at all — describe via options.
+      if (el.tagName && el.tagName.toLowerCase() === 'select') {
+        const opts = describeOptions(el, 4);
+        if (opts) return `select[${opts}]`.slice(0, 80);
+      }
       return (
         el.getAttribute('name') ||
         el.getAttribute('placeholder') ||
@@ -1324,7 +1378,11 @@
     const strValue = value == null ? '' : String(value);
     const tag = field.tagName.toLowerCase();
     // 1. Native dropdowns (existing options only).
-    if (tag === 'select') return setSelectValue(field, strValue);
+    if (tag === 'select') {
+      const ok = await setSelectValue(field, strValue);
+      if (!ok) lastFillInfo = { applied: false, reason: 'no-match' };
+      return ok;
+    }
     // 2. Custom dropdown triggers (existing options only; may need to wait
     //    for the popup / search filter, hence async).
     if (fieldKind(field) === 'combobox') {
@@ -1559,7 +1617,8 @@
             filled += 1;
           } else {
             const why = lastFillInfo.reason ? ` (${lastFillInfo.reason})` : '';
-            skippedLabels.push(`${fieldDescribe(el)}${why}`);
+            const wanted = `wanted "${String(text).slice(0, 40)}"`;
+            skippedLabels.push(`${fieldDescribe(el)} — ${wanted}${why}`);
           }
         } catch {
           /* skip failing field, continue with the rest */
