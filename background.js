@@ -257,12 +257,13 @@ function generateFullFormSuggestion(fields, pageMeta) {
     '1. Return ONLY a single valid JSON object mapping each uid to its fill value.',
     '2. Example: {"f0": "John Doe", "f1": "john@example.com", "f2": "us"}',
     '3. Include EVERY uid exactly once. Values must be plain strings (use "" for a field you truly cannot fill).',
-    '4. Fields marked "item X of N with the same label" (repeated rows) are DISTINCT fields — give each a DIFFERENT plausible value, never copy the same value across them.',
-    '5. If a field already has a meaningful non-empty current value (not empty, not just "0"), keep it by returning that same value verbatim.',
-    '6. For input type "number": return digits only (e.g. "10", "150.00") — no currency symbols, no commas, no text.',
-    '7. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields. If no option fits, use "".',
-    '8. For kind "combobox" fields WITH an options list: the value MUST be exactly one of the listed options (exact value, verbatim) — only values already in the list may be selected, never anything new. With NO options list (unrendered popup): return a short, standard choice as plain text (e.g. a country name or category).',
-    '9. NO markdown, NO code fences, NO explanation, NO surrounding text — raw JSON only.'
+    '4. VARIETY IS MANDATORY for repeated rows: fields marked "item X of N with the same label" are DISTINCT fields. NEVER repeat the same value across them. Example for 3 item-name fields: row 1 "Web Development", row 2 "UI/UX Design", row 3 "SEO Optimization" — each clearly different. Same for descriptions, quantities, and rates: vary every row realistically.',
+    '5. Dropdowns in repeated rows are the ONLY exception: if the same option genuinely fits all rows (e.g. the same tax rate), it may repeat — but only when it truly fits.',
+    '6. If a field already has a meaningful non-empty current value (not empty, not just "0"), keep it by returning that same value verbatim.',
+    '7. For input type "number": return digits only (e.g. "10", "150.00") — no currency symbols, no commas, no text.',
+    '8. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields. If no option fits, use "".',
+    '9. For kind "combobox" fields WITH an options list: the value MUST be exactly one of the listed options (exact value, verbatim) — only values already in the list may be selected, never anything new. With NO options list (unrendered popup): return a short, standard choice as plain text (e.g. a country name or category).',
+    '10. NO markdown, NO code fences, NO explanation, NO surrounding text — raw JSON only.'
   ].join('\n');
 }
 
@@ -279,7 +280,7 @@ async function handleSingleFill(context, sendResponse) {
       apiKey,
       model,
       prompt: buildSinglePrompt(context || {}),
-      temperature: 0.7,
+      temperature: 0.85,
       maxOutputTokens: 512
     });
     if (!result.ok) {
@@ -314,7 +315,7 @@ async function handleBatchFill(payload, sendResponse) {
       apiKey,
       model,
       prompt: generateFullFormSuggestion(capped, payload?.page),
-      temperature: 0.6,
+      temperature: 0.75,
       maxOutputTokens: 2048
     });
     if (!result.ok) {
