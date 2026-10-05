@@ -674,13 +674,22 @@
   function findPopupSearchInput(trigger) {
     const selector =
       'input[type="search"], input[placeholder*="earch" i], input[aria-label*="earch" i]';
+    const isCandidate = (found) => found && found !== trigger && isVisible(found);
     try {
       const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
       if (controlsId) {
         const popup = document.getElementById(controlsId);
         if (popup) {
-          const found = popup.querySelector(selector);
-          if (found && isVisible(found)) return found;
+          const found = popup.querySelector(selector) || popup.querySelector('input:not([type="hidden"])');
+          if (isCandidate(found)) return found;
+        }
+      }
+      // Radix / headless-ui portals and open-state containers.
+      for (const sel of ['[data-radix-popper-content-wrapper]', '[data-state="open"]']) {
+        for (const box of document.querySelectorAll(sel)) {
+          if (box === trigger || (trigger.contains && trigger.contains(box))) continue;
+          const found = box.querySelector(selector) || box.querySelector('input:not([type="hidden"])');
+          if (isCandidate(found)) return found;
         }
       }
       // Popup is often a portal sibling right after the trigger container.
@@ -688,12 +697,12 @@
       for (let depth = 0; depth < 3 && node; depth++) {
         const found = node.querySelector(':scope [role="listbox"] ' + selector.split(',')[0]) ||
           node.querySelector(selector);
-        if (found && found !== trigger && isVisible(found)) return found;
+        if (isCandidate(found)) return found;
         node = node.parentElement;
       }
       const all = document.querySelectorAll('[role="listbox"] input, [role="dialog"] input[type="search"]');
       for (const input of all) {
-        if (input !== trigger && isVisible(input)) return input;
+        if (isCandidate(input)) return input;
       }
     } catch {
       /* noop */
@@ -730,6 +739,51 @@
     return found;
   }
 
+  // Last-resort rows: plain buttons / list items / links inside a KNOWN popup
+  // container (portal, open-state, listbox, dialog). Never applied to the
+  // general page — only to popups we opened. Action rows are filtered later.
+  function queryGenericPopupRows(container) {
+    const found = [];
+    try {
+      if (!container || !container.querySelectorAll) return found;
+      for (const n of container.querySelectorAll('button, li, a[href], [role="menuitem"], [role="treeitem"]')) {
+        const text = cleanOptionText(n.innerText || n.textContent, 120);
+        if (!text || text.length < 2) continue;
+        // Skip nested duplicates: keep the outermost clickable row.
+        if (n.querySelector && n.querySelector('button, li, a[href], [role="menuitem"]')) continue;
+        found.push(n);
+      }
+    } catch {
+      /* noop */
+    }
+    return found;
+  }
+
+  // Containers that are definitely popups (not general page scope).
+  function popupOnlyContainers(trigger) {
+    const containers = [];
+    try {
+      const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
+      if (controlsId) {
+        const popup = document.getElementById(controlsId);
+        if (popup) containers.push(popup);
+      }
+      for (const box of document.querySelectorAll(
+        '[data-radix-popper-content-wrapper], [role="listbox"], [role="menu"], [role="dialog"]'
+      )) {
+        if (box === trigger) continue;
+        if (isVisible(box)) containers.push(box);
+      }
+      for (const box of document.querySelectorAll('[data-state="open"]')) {
+        if (box === trigger || (trigger.contains && trigger.contains(box))) continue;
+        if (isVisible(box)) containers.push(box);
+      }
+    } catch {
+      /* noop */
+    }
+    return containers;
+  }
+
   function popupContainers(trigger) {
     const containers = [];
     try {
@@ -759,8 +813,31 @@
     };
     for (const c of popupContainers(trigger)) add(queryOptionNodes(c));
     add(queryOptionNodes(document));
+    // Generic clickable rows, but ONLY inside known popup containers.
+    for (const c of popupOnlyContainers(trigger)) add(queryGenericPopupRows(c));
     // Never consider action rows or disabled options as candidates.
     return nodes.filter((n) => !isActionNode(n));
+  }
+
+  // Try keyboard open as a fallback (some custom dropdowns ignore synthetic
+  // mouse events but respond to Enter / Space / ArrowDown).
+  function keyboardOpen(trigger) {
+    for (const key of ['Enter', ' ', 'ArrowDown']) {
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        try {
+          trigger.dispatchEvent(
+            new KeyboardEvent(type, { key, bubbles: true, cancelable: true })
+          );
+        } catch {
+          /* noop */
+        }
+      }
+    }
+    try {
+      if (typeof trigger.click === 'function') trigger.click();
+    } catch {
+      /* noop */
+    }
   }
 
   // Poll for popup options (portals animate in; filters re-render).
@@ -873,7 +950,8 @@
         return { applied: false, reason: 'type-failed' };
       }
       await sleep(500);
-      const option = findRenderedOption(trigger, strTarget);
+      const nodesA = await waitForOptionNodes(trigger, 1500);
+      const option = matchNode(nodesA, normalizeChoice(strTarget));
       if (option) {
         clickNode(option);
         trigger.dispatchEvent(new Event('change', { bubbles: true }));
@@ -906,7 +984,17 @@
     let nodes = await waitForOptionNodes(trigger, 1500);
     debug('combobox popup options', { target: strTarget, count: nodes.length });
 
+    // Popup still empty? The site may ignore synthetic mouse events —
+    // retry with keyboard open (Enter / Space / ArrowDown).
+    if (nodes.length === 0) {
+      keyboardOpen(trigger);
+      nodes = await waitForOptionNodes(trigger, 1500);
+      debug('combobox after keyboard open', { target: strTarget, count: nodes.length });
+    }
+
     // If the popup has its own search box, filter through it, then re-collect.
+    // (Server-filtered lists like "Search clients…" only render options
+    // once you type.)
     const searchBox = findPopupSearchInput(trigger);
     if (searchBox) {
       typeIntoSearchBox(searchBox, strTarget);
