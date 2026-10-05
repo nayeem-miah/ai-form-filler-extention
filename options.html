@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>AI Form Filler Assistant — Settings</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="aiff-options-body">
+  <main class="aiff-card">
+    <header class="aiff-header">
+      <div class="aiff-title-wrap">
+        <h1>AI Form Filler</h1>
+        <p class="aiff-subtitle">Gemini-powered form filling</p>
+      </div>
+      <button id="themeToggle" class="aiff-icon-btn" type="button" aria-label="Switch to dark mode" title="Toggle light / dark mode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </button>
+    </header>
+
+    <div class="aiff-badge">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+      <span>Encrypted &amp; Stored Locally</span>
+    </div>
+
+    <label class="aiff-label" for="apiKey">API Key</label>
+    <div class="aiff-input-wrap">
+      <input
+        id="apiKey"
+        class="aiff-input"
+        type="password"
+        placeholder="AIza..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="toggleVisibility" class="aiff-eye-btn" type="button" aria-label="Show API key">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+    </div>
+
+    <label class="aiff-label" for="modelSelect">Model</label>
+    <select id="modelSelect" class="aiff-select"></select>
+
+    <div class="aiff-actions">
+      <button id="saveBtn" class="aiff-btn-primary" type="button">Save</button>
+      <button id="testBtn" class="aiff-btn-ghost" type="button">Test</button>
+      <button id="clearBtn" class="aiff-btn-danger" type="button">Remove</button>
+    </div>
+
+    <p id="status" class="aiff-status" role="status" aria-live="polite"></p>
+
+    <footer class="aiff-footer">
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get a key</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
+    </footer>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

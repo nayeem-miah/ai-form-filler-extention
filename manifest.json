@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "AI Form Filler Assistant",
+  "version": "1.2.0",
+  "description": "Single-field AI Fill + Fill All Fields batch form filling with text, select, and custom dropdown support, powered by Google Gemini (selectable model).",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "AI Form Filler Assistant"
+  }
+}

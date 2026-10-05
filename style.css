@@ -1,0 +1,412 @@
+/* style.css
+ * Serves two roles:
+ *  1. Content-script scoping layer — the floating buttons live in Shadow DOM
+ *     (see content.js), so this file only pins the host container and provides
+ *     light-DOM fallback classes.
+ *  2. Options page design system — minimalist Vercel/Linear-inspired card
+ *     (compact 400–440px, subtle borders, 12–16px radii, soft shadow),
+ *     with light + dark themes via [data-theme] on <html>.
+ */
+
+/* ---------- Theme tokens ---------- */
+:root,
+html[data-theme="light"] {
+  color-scheme: light;
+  /* Required theme variables (Light) */
+  --bg-card: #ffffff;
+  --text-main: #171717;
+  --border-color: #e5e5e5;
+  --primary: #171717;
+  /* Supporting tokens */
+  --aiff-muted: #737373;
+  --aiff-bg: #fafafa;
+  --aiff-input-bg: #ffffff;
+  --aiff-input-border: #e5e5e5;
+  --aiff-hover-bg: #f5f5f5;
+  --aiff-red: #e5484d;
+  --aiff-green: #30a46c;
+  --aiff-indigo: #3e63dd;
+  --aiff-card-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+  --aiff-focus-ring: rgba(23, 23, 23, 0.12);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  /* Required theme variables (Dark) */
+  --bg-card: #0a0a0a;
+  --text-main: #ededed;
+  --border-color: #262626;
+  --primary: #ededed;
+  /* Supporting tokens */
+  --aiff-muted: #a1a1a1;
+  --aiff-bg: #000000;
+  --aiff-input-bg: #0a0a0a;
+  --aiff-input-border: #262626;
+  --aiff-hover-bg: #171717;
+  --aiff-red: #f76b15;
+  --aiff-green: #3dd68c;
+  --aiff-indigo: #5b7ef4;
+  --aiff-card-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --aiff-focus-ring: rgba(237, 237, 237, 0.16);
+}
+
+/* ---------- Content-script host (scoped, minimal) ---------- */
+#ai-form-filler-root {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+}
+
+/* Fallback if a button is ever rendered in light DOM */
+.aiff-btn-fallback {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #6e56cf, #3e63dd);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(62, 99, 221, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+  z-index: 2147483647;
+}
+
+.aiff-fill-all-fallback {
+  right: 20px;
+  bottom: 20px;
+  padding: 12px 18px;
+  font-size: 14px;
+  background: linear-gradient(135deg, #18794e, #30a46c);
+  box-shadow: 0 8px 24px rgba(24, 121, 78, 0.45);
+}
+
+/* ---------- Options page (minimalist SaaS) ---------- */
+.aiff-options-body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--aiff-bg);
+  color: var(--text-main);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px;
+  box-sizing: border-box;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.aiff-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--aiff-card-shadow);
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.aiff-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.aiff-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.aiff-card h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.aiff-subtitle {
+  margin: 1px 0 0;
+  font-size: 12.5px;
+  color: var(--aiff-muted);
+}
+
+.aiff-icon-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--aiff-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.aiff-icon-btn:hover {
+  color: var(--text-main);
+  background: var(--aiff-hover-bg);
+  border-color: var(--border-color);
+}
+
+.aiff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--aiff-muted);
+  background: var(--aiff-hover-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+
+.aiff-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--aiff-muted);
+  margin: 16px 0 6px;
+}
+
+.aiff-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Input with icon button inside (right side) */
+.aiff-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.aiff-input,
+.aiff-select {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--text-main);
+  background: var(--aiff-input-bg);
+  border: 1px solid var(--aiff-input-border);
+  border-radius: 8px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
+}
+
+.aiff-input-wrap .aiff-input {
+  padding-right: 38px;
+}
+
+.aiff-input::placeholder {
+  color: var(--aiff-muted);
+  opacity: 0.7;
+}
+
+.aiff-input:focus,
+.aiff-select:focus {
+  border-color: var(--aiff-input-border);
+  box-shadow: 0 0 0 3px var(--aiff-focus-ring);
+}
+
+.aiff-eye-btn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--aiff-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.aiff-eye-btn:hover {
+  color: var(--text-main);
+  background: var(--aiff-hover-bg);
+}
+
+.aiff-select {
+  cursor: pointer;
+  /* Match the API key input exactly */
+  padding: 9px 12px;
+  padding-right: 32px;
+}
+
+/* Native popup list: theme-matched colors + even padding.
+   (The open list is OS-rendered; background/color/padding are the
+   properties Chrome respects here.) */
+.aiff-select optgroup {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--aiff-muted);
+}
+
+.aiff-select option {
+  font-size: 13.5px;
+  font-weight: 400;
+  background: var(--bg-card);
+  color: var(--text-main);
+  padding: 8px 12px;
+}
+
+.aiff-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* All three action buttons share one identical outline style */
+.aiff-btn-primary,
+.aiff-btn-ghost,
+.aiff-btn-danger {
+  flex: 1;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-main);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.aiff-btn-primary:hover:not(:disabled),
+.aiff-btn-ghost:hover:not(:disabled),
+.aiff-btn-danger:hover:not(:disabled) {
+  background: var(--aiff-hover-bg);
+}
+
+.aiff-btn-primary:disabled,
+.aiff-btn-ghost:disabled,
+.aiff-btn-danger:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.aiff-btn-danger {
+  color: var(--aiff-red);
+}
+
+.aiff-btn-danger:hover:not(:disabled) {
+  border-color: var(--aiff-red);
+}
+
+.aiff-status {
+  min-height: 18px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 12px 0 0;
+  word-break: break-word;
+}
+
+.aiff-status-success {
+  color: var(--aiff-green);
+}
+
+.aiff-status-error {
+  color: var(--aiff-red);
+}
+
+.aiff-status-info {
+  color: var(--aiff-muted);
+}
+
+.aiff-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--aiff-muted);
+}
+
+.aiff-footer a {
+  color: var(--aiff-muted);
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+.aiff-footer a:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+}
+
+/* Legacy class aliases (kept for compatibility) */
+.aiff-btn-secondary {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-main);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.aiff-btn-danger-ghost {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--aiff-red);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 480px) {
+  .aiff-options-body {
+    padding: 24px 12px;
+  }
+
+  .aiff-card {
+    padding: 20px;
+    border-radius: 12px;
+  }
+
+  .aiff-actions {
+    flex-direction: column;
+  }
+
+  .aiff-btn-primary,
+  .aiff-btn-ghost,
+  .aiff-btn-danger {
+    width: 100%;
+  }
+}
