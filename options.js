@@ -31,7 +31,8 @@ const PROVIDERS = {
     keyPlaceholder: 'AIza...',
     keyHint: '',
     keyLink: 'https://aistudio.google.com/app/apikey',
-    keyLinkText: 'Get a Gemini key'
+    keyLinkText: 'Get a Gemini key',
+    modelsLink: 'https://ai.google.dev/gemini-api/docs/models'
   },
   openai: {
     label: 'OpenAI (Official)',
@@ -41,18 +42,20 @@ const PROVIDERS = {
     keyPlaceholder: 'sk-...',
     keyHint: '',
     keyLink: 'https://platform.openai.com/api-keys',
-    keyLinkText: 'Get an OpenAI key'
+    keyLinkText: 'Get an OpenAI key',
+    modelsLink: 'https://platform.openai.com/docs/models'
   },
   custom: {
     label: 'OpenAI Compatible / Custom API',
     models: [],
     defaultModel: '',
     freeModel: true,
-    keyLabel: 'API Key',
+    keyLabel: 'API Key (optional)',
     keyPlaceholder: 'sk-or-v1-...',
     keyHint: 'Leave empty for local servers such as Ollama or LM Studio.',
     keyLink: 'https://openrouter.ai/models',
-    keyLinkText: 'Browse compatible providers'
+    keyLinkText: 'Browse compatible providers',
+    modelsLink: 'https://openrouter.ai/models'
   }
 };
 const DEFAULT_PROVIDER = 'gemini';
@@ -94,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelSelect = document.getElementById('modelSelect');
   const modelLabelEl = document.getElementById('modelLabel');
   const keyLink = document.getElementById('keyLink');
+  const modelsLink = document.getElementById('modelsLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
   const testBtn = document.getElementById('testBtn');
@@ -158,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     buildModelOptions(currentProvider, modelToSelect || catalog.defaultModel);
     keyLink.href = catalog.keyLink;
     keyLink.textContent = catalog.keyLinkText;
+    modelsLink.href = catalog.modelsLink;
   }
 
   // ---- Theme ----
