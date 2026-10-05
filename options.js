@@ -48,7 +48,7 @@ const PROVIDERS = {
     models: [],
     defaultModel: '',
     freeModel: true,
-    keyLabel: 'API Key (optional)',
+    keyLabel: 'API Key',
     keyPlaceholder: 'sk-or-v1-...',
     keyHint: 'Leave empty for local servers such as Ollama or LM Studio.',
     keyLink: 'https://openrouter.ai/models',
@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('apiKey');
   const keyHint = document.getElementById('keyHint');
   const modelSelect = document.getElementById('modelSelect');
+  const modelLabelEl = document.getElementById('modelLabel');
   const keyLink = document.getElementById('keyLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -111,10 +112,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
     modelSelect.textContent = '';
 
-    // Custom providers have an open-ended model list -> hide the dropdown and
-    // use the dedicated "Model Name" text field instead.
+    // Custom providers have an open-ended model list -> hide the dropdown
+    // (and its label) and use the dedicated "Model Name" text field instead.
     const useCustomModel = Boolean(catalog.freeModel);
     modelSelect.hidden = useCustomModel;
+    modelLabelEl.hidden = useCustomModel;
     if (useCustomModel) return;
 
     for (const id of catalog.models) {

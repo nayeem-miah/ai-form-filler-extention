@@ -219,6 +219,15 @@ html[data-theme="dark"] {
   display: none;
 }
 
+/* Author `display` declarations override the UA `[hidden]` rule, so the
+   Model label / dropdown must be hidden explicitly. */
+.aiff-label[hidden],
+.aiff-select[hidden],
+.aiff-input[hidden],
+.aiff-hint[hidden] {
+  display: none !important;
+}
+
 /* Input with icon button inside (right side) */
 .aiff-input-wrap {
   position: relative;
