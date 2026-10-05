@@ -26,6 +26,8 @@
     'color'
   ]);
   const MAX_BATCH_FIELDS = 40;
+  // Cap popups opened just for option harvesting (each costs ~1s).
+  const MAX_HARVEST_FIELDS = 12;
 
   let host = null;
   let shadow = null;
@@ -611,6 +613,55 @@
       return getRenderedListboxOptions(el, maxOptions);
     }
     return [];
+  }
+
+  function closePopup(trigger) {
+    try {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    } catch {
+      /* noop */
+    }
+  }
+
+  // Open a closed custom dropdown, harvest its rendered options, close it
+  // again. This is what lets the AI see REAL options (instead of guessing)
+  // for popups that only render on open. Best-effort per field.
+  async function harvestComboboxOptions(trigger, maxOptions = 60) {
+    let options = getRenderedListboxOptions(trigger, maxOptions);
+    if (options.length > 0) return options;
+    const tag = trigger.tagName.toLowerCase();
+    if (tag === 'input' && !trigger.readOnly) return options; // typable: nothing to open
+    try {
+      clickNode(trigger);
+      const nodes = await waitForOptionNodes(trigger, 1200);
+      options = getRenderedListboxOptions(trigger, maxOptions);
+      if (options.length === 0 && nodes.length > 0) {
+        // Nodes exist but produced no data (e.g. empty text) — build manually.
+        const seen = new Set();
+        for (const n of nodes) {
+          if (options.length >= maxOptions) break;
+          if (isActionNode(n)) continue;
+          const text = cleanOptionText(n.innerText || n.textContent);
+          if (!text || seen.has(text)) continue;
+          seen.add(text);
+          options.push({
+            value: n.getAttribute('data-value') || n.getAttribute('data-option-value') || text,
+            text
+          });
+        }
+      }
+    } catch {
+      /* noop */
+    } finally {
+      closePopup(trigger);
+      await sleep(150);
+    }
+    debug('harvested combobox options', {
+      label: fieldDescribe(trigger),
+      count: options.length
+    });
+    return options;
   }
 
   function extractContext(el) {
@@ -1308,6 +1359,20 @@
     const context = extractContext(field);
     setSingleState('loading');
 
+    // Closed custom dropdown: harvest real options first so the AI picks
+    // from the actual list instead of guessing.
+    if (context.kind === 'combobox' && (!context.options || context.options.length === 0)) {
+      try {
+        setSingleState('loading', '⏳ Reading options…');
+        const options = await harvestComboboxOptions(field);
+        if (options.length > 0) context.options = options;
+        setSingleState('loading');
+        field.focus();
+      } catch {
+        /* fall through with whatever context we have */
+      }
+    }
+
     let response;
     try {
       response = await chrome.runtime.sendMessage({ type: 'AIFF_FILL', context });
@@ -1364,7 +1429,7 @@
 
   // ---------- Batch fill ----------
 
-  function collectFillableFields() {
+  async function collectFillableFields() {
     const candidates = queryAllDeep(BATCH_SELECTOR, 500);
     const fillable = [];
 
@@ -1387,6 +1452,28 @@
     const groupKey = (ctx) =>
       [ctx.kind, ctx.label, ctx.name, ctx.placeholder].join('|').toLowerCase();
     const contexts = fillable.map((el) => extractContext(el));
+
+    // Harvest REAL options for closed custom dropdowns: open each popup,
+    // read its options, close it. Without this the AI would have to guess.
+    const previouslyFocused = document.activeElement;
+    let harvested = 0;
+    for (let i = 0; i < fillable.length && harvested < MAX_HARVEST_FIELDS; i++) {
+      if (contexts[i].kind !== 'combobox') continue;
+      if (contexts[i].options && contexts[i].options.length > 0) continue;
+      try {
+        const options = await harvestComboboxOptions(fillable[i]);
+        if (options.length > 0) contexts[i].options = options;
+        harvested++;
+      } catch {
+        /* best-effort per field */
+      }
+    }
+    try {
+      if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+    } catch {
+      /* noop */
+    }
+
     for (const ctx of contexts) {
       const key = groupKey(ctx);
       groupCounts.set(key, (groupCounts.get(key) || 0) + 1);
@@ -1414,9 +1501,9 @@
   async function onFillAllClick() {
     if (isBatchLoading) return;
     ensureUI();
-    setFillAllState('loading');
+    setFillAllState('loading', '⏳ Reading fields…');
 
-    const { fields, elementByUid } = collectFillableFields();
+    const { fields, elementByUid } = await collectFillableFields();
     if (fields.length === 0) {
       setFillAllState('error', '⚠️ No fields found');
       alert('No visible, fillable fields (inputs, textareas, or dropdowns) were found on this page.');
@@ -1426,6 +1513,7 @@
 
     let response;
     try {
+      setFillAllState('loading', '⏳ Generating…');
       response = await chrome.runtime.sendMessage({
         type: 'AIFF_FILL_ALL',
         payload: {
