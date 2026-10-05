@@ -903,8 +903,37 @@
 
   // Standard <select>: pick the option whose value/text matches best,
   // then dispatch change + input so React/Vue/Angular detect it.
-  // Strict: with NO match the select is left untouched (return false) —
-  // never auto-pick an unrelated option.
+  // Existing options only — we never invent a value. When the model asks for
+  // something absent from the list, fall back to the best option that IS in
+  // the list (never leave the field empty just because of a mismatch).
+  const PLACEHOLDER_RE = /^(select|choose|please|pick|option|--|-|n\/a|none)\b/i;
+
+  function isPlaceholderOption(o) {
+    const text = cleanOptionText((o && (o.innerText || o.textContent)) || '', 40);
+    const value = String((o && o.value) || '').trim();
+    if (value === '' && text === '') return true;
+    return value === '' && PLACEHOLDER_RE.test(text);
+  }
+
+  // Best in-list fallback: first real (non-placeholder, non-disabled) option.
+  function pickFallbackOption(options) {
+    if (!Array.isArray(options)) return null;
+    for (const o of options) {
+      if (!o || o.disabled) continue;
+      if (isPlaceholderOption(o)) continue;
+      return o;
+    }
+    return null;
+  }
+
+  function optionLabel(o) {
+    if (!o) return '';
+    const text = cleanOptionText(o.innerText || o.textContent || '', 60);
+    const value = String(o.value == null ? '' : o.value).trim();
+    if (value && value !== text) return `${value} (${text})`;
+    return text || value;
+  }
+
   function meaningfulOptions(selectEl) {
     try {
       return [...selectEl.options].filter(
@@ -945,13 +974,18 @@
     }
     // Reuse the same matcher as custom dropdowns (exact → partial → tokens).
     // HTMLOptionElement supports getAttribute/innerText like our row nodes.
-    const match = matchNode(opts, t);
+    let match = matchNode(opts, t);
+    let usedFallback = false;
     if (!match || match.disabled) {
-      debug('select no match', {
+      // Nothing matched → pick the best option that actually exists in the list.
+      match = pickFallbackOption(opts);
+      usedFallback = Boolean(match);
+      debug('select fallback', {
         wanted: String(target).slice(0, 80),
+        chosen: match ? optionLabel(match) : null,
         available: describeOptions(selectEl)
       });
-      return false;
+      if (!match) return false;
     }
     const chosen = match;
     try {
@@ -974,6 +1008,9 @@
     selectEl.selectedIndex = chosen.index;
     selectEl.dispatchEvent(new Event('input', { bubbles: true }));
     selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    lastFillInfo = usedFallback
+      ? { applied: true, reason: 'fallback', fallback: true, chosen: optionLabel(chosen) }
+      : { applied: true, reason: '' };
     return true;
   }
 
@@ -1348,21 +1385,38 @@
     }
 
     const option = matchNode(nodes, normalizeChoice(strTarget));
-    if (!option) {
-      // No existing option matches: close the popup (Escape) and touch nothing.
-      try {
-        trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      } catch {
-        /* noop */
-      }
-      debug('combobox no match, untouched', { target: strTarget, seen: nodes.length });
-      return { applied: false, reason: nodes.length === 0 ? 'no-options-rendered' : 'no-match' };
+    if (option) {
+      clickNode(option);
+      trigger.dispatchEvent(new Event('input', { bubbles: true }));
+      trigger.dispatchEvent(new Event('change', { bubbles: true }));
+      return { applied: true };
     }
-    clickNode(option);
-    trigger.dispatchEvent(new Event('input', { bubbles: true }));
-    trigger.dispatchEvent(new Event('change', { bubbles: true }));
-    return { applied: true };
+    // Nothing matched the requested value. Instead of leaving the field empty,
+    // click the best option that IS present in the popup (existing options
+    // only — never invent a new value, never click action rows).
+    const fallback = pickFallbackOption(nodes);
+    if (fallback) {
+      debug('combobox fallback', { target: strTarget, chosen: optionLabel(fallback) });
+      clickNode(fallback);
+      trigger.dispatchEvent(new Event('input', { bubbles: true }));
+      trigger.dispatchEvent(new Event('change', { bubbles: true }));
+      return {
+        applied: true,
+        reason: 'fallback',
+        fallback: true,
+        chosen: optionLabel(fallback)
+      };
+    }
+
+    // Popup had nothing usable at all: close it and leave the field untouched.
+    try {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    } catch {
+      /* noop */
+    }
+    debug('combobox untouched', { target: strTarget, seen: nodes.length });
+    return { applied: false, reason: 'no-options-rendered' };
   }
 
   // Model sometimes returns "$1,500.00" for numeric inputs — browsers reject
@@ -1543,7 +1597,15 @@
         }, 2000);
         return;
       }
-      setSingleState('success');
+      if (lastFillInfo.fallback) {
+        const chosen = lastFillInfo.chosen ? `"${lastFillInfo.chosen}"` : 'the first available option';
+        setSingleState('success', '✓ Closest match');
+        alert(
+          `"${String(fillText).slice(0, 120)}" isn't in this dropdown's options, so ${chosen} was selected instead.`
+        );
+      } else {
+        setSingleState('success');
+      }
       positionSingleButton();
       setTimeout(() => {
         if (activeField === field) setSingleState('idle');
@@ -1681,17 +1743,26 @@
       const values = response.values || {};
       let filled = 0;
       const skippedLabels = [];
+      const fallbackLabels = [];
       for (const [uid, text] of Object.entries(values)) {
         const el = elementByUid.get(uid);
         if (!el || !el.isConnected) continue;
         if (typeof text !== 'string' || text === '') continue;
         try {
-          // Dropdowns resolve to false when no existing option matches —
-          // those fields are counted as skipped, never force-filled.
+          // Dropdowns resolve to false only when the popup had no usable
+          // option at all — those are counted as skipped, never force-filled.
           lastFillInfo = { applied: false, reason: '' };
           const applied = await setFieldValue(el, text);
           if (applied) {
             filled += 1;
+            // Requested value wasn't in the list, so an existing option was
+            // chosen instead — surface that so the user knows why.
+            if (lastFillInfo.fallback) {
+              const chosen = lastFillInfo.chosen ? `"${lastFillInfo.chosen}"` : 'first available option';
+              fallbackLabels.push(
+                `${fieldDescribe(el)}: "${String(text).slice(0, 40)}" not in list → selected ${chosen}`
+              );
+            }
           } else {
             const why = lastFillInfo.reason ? ` (${lastFillInfo.reason})` : '';
             const wanted = `wanted "${String(text).slice(0, 40)}"`;
@@ -1721,7 +1792,16 @@
       } else if (skipped > 0) {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
         alert(
-          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped — no existing option matched, so nothing new was selected there. Skipped: ${skippedLabels.slice(0, 5).join('; ')}.`
+          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped (no options available to select). Skipped: ${skippedLabels.slice(0, 5).join('; ')}.${
+            fallbackLabels.length
+              ? `\n\nNote — ${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} filled with the closest existing option instead:\n${fallbackLabels.slice(0, 5).join('\n')}`
+              : ''
+          }`
+        );
+      } else if (fallbackLabels.length > 0) {
+        setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
+        alert(
+          `${filled} field${filled === 1 ? '' : 's'} filled. ${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} used the closest existing option because the requested value wasn't in the list:\n${fallbackLabels.slice(0, 5).join('\n')}`
         );
       } else {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
