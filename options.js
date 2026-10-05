@@ -130,17 +130,37 @@ document.addEventListener('DOMContentLoaded', () => {
     testBtn.textContent = busy ? 'Working…' : 'Test';
   }
 
+  // ---- Dynamic favicon (code-driven, no manifest change needed) ----
+  function setFavicon(hasKey) {
+    try {
+      const file = hasKey ? 'active-16.png' : 'idle-16.png';
+      let link = document.querySelector('link[rel="icon"]');
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = chrome.runtime.getURL(`icons/${file}`);
+    } catch {
+      /* favicon is cosmetic; ignore failures */
+    }
+  }
+
   // ---- Load saved settings ----
   buildModelOptions(DEFAULT_MODEL);
   chrome.storage.sync.get(['apiKey', 'model', 'theme'], (result) => {
     if (chrome.runtime.lastError) {
       setStatus(`Could not load settings: ${chrome.runtime.lastError.message}`, 'error');
       initTheme(null);
+      setFavicon(false);
       return;
     }
     initTheme(result && result.theme);
     if (result && typeof result.apiKey === 'string' && result.apiKey) {
       apiKeyInput.value = result.apiKey;
+      setFavicon(true);
+    } else {
+      setFavicon(false);
     }
     buildModelOptions(
       result && typeof result.model === 'string' && result.model.trim()
@@ -178,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       setStatus(`Settings saved. Model: ${model}.`, 'success');
+      setFavicon(true);
     });
   });
 
@@ -192,6 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       apiKeyInput.value = '';
       setStatus('API key removed. Model and theme kept.', 'info');
+      setFavicon(false);
     });
   });
 

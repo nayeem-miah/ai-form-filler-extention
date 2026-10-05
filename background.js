@@ -392,6 +392,31 @@ async function handleTest(requestedModel, sendResponse) {
   }
 }
 
+// ---------- Dynamic toolbar icon (active/idle based on API key) ----------
+
+const ICON_SETS = {
+  active: { 16: 'icons/active-16.png', 48: 'icons/active-48.png', 128: 'icons/active-128.png' },
+  idle: { 16: 'icons/idle-16.png', 48: 'icons/idle-48.png', 128: 'icons/idle-128.png' }
+};
+
+async function refreshActionIcon() {
+  try {
+    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    const hasKey = typeof apiKey === 'string' && apiKey.trim().length > 0;
+    await chrome.action.setIcon({ path: hasKey ? ICON_SETS.active : ICON_SETS.idle });
+  } catch {
+    /* icon update is best-effort; core fill logic unaffected */
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes && Object.hasOwn(changes, 'apiKey')) {
+    refreshActionIcon();
+  }
+});
+
+refreshActionIcon();
+
 // ---------- Message router ----------
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
