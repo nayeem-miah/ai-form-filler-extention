@@ -230,8 +230,9 @@ function buildSinglePrompt(context) {
 
 function generateFullFormSuggestion(fields, pageMeta) {
   const fieldLines = fields.map((f) => {
+    const pos = f.position ? ` position=[${String(f.position).slice(0, 160)}]` : '';
     const base =
-      `- uid "${f.uid}": tag=${f.tagName || 'n/a'} kind=${f.kind || 'text'} type=${f.type || 'n/a'} name=${f.name || 'n/a'} id=${f.id || 'n/a'} placeholder=${f.placeholder || 'n/a'} label=${f.label || 'n/a'} current=${f.currentValue || '(empty)'}`;
+      `- uid "${f.uid}": tag=${f.tagName || 'n/a'} kind=${f.kind || 'text'} type=${f.type || 'n/a'} name=${f.name || 'n/a'} id=${f.id || 'n/a'} placeholder=${f.placeholder || 'n/a'} label=${f.label || 'n/a'} current=${f.currentValue || '(empty)'}${pos}`;
     const optionsText = formatOptionsForPrompt(f.options);
     if ((f.kind === 'select' || f.type === 'select') && optionsText) {
       return `${base} options=[${optionsText}]`;
@@ -256,9 +257,12 @@ function generateFullFormSuggestion(fields, pageMeta) {
     '1. Return ONLY a single valid JSON object mapping each uid to its fill value.',
     '2. Example: {"f0": "John Doe", "f1": "john@example.com", "f2": "us"}',
     '3. Include EVERY uid exactly once. Values must be plain strings (use "" for a field you truly cannot fill).',
-    '4. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields. If no option fits, use "".',
-    '5. For kind "combobox" fields WITH an options list: the value MUST be exactly one of the listed options (exact value, verbatim) — only values already in the list may be selected, never anything new. With NO options list (unrendered popup): return a short, standard choice as plain text (e.g. a country name or category).',
-    '6. NO markdown, NO code fences, NO explanation, NO surrounding text — raw JSON only.'
+    '4. Fields marked "item X of N with the same label" (repeated rows) are DISTINCT fields — give each a DIFFERENT plausible value, never copy the same value across them.',
+    '5. If a field already has a meaningful non-empty current value (not empty, not just "0"), keep it by returning that same value verbatim.',
+    '6. For input type "number": return digits only (e.g. "10", "150.00") — no currency symbols, no commas, no text.',
+    '7. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields. If no option fits, use "".',
+    '8. For kind "combobox" fields WITH an options list: the value MUST be exactly one of the listed options (exact value, verbatim) — only values already in the list may be selected, never anything new. With NO options list (unrendered popup): return a short, standard choice as plain text (e.g. a country name or category).',
+    '9. NO markdown, NO code fences, NO explanation, NO surrounding text — raw JSON only.'
   ].join('\n');
 }
 

@@ -74,7 +74,9 @@
       font-size: 14px;
       background: linear-gradient(135deg, #18794e, #30a46c);
       box-shadow: 0 8px 24px rgba(24, 121, 78, 0.45);
+      cursor: grab;
     }
+    .aiff-fill-all:active { cursor: grabbing; }
     .aiff-fill-all:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(24,121,78,0.55); }
   `;
 
@@ -119,12 +121,135 @@
       fillAllBtn.className = 'aiff-btn aiff-fill-all';
       fillAllBtn.setAttribute('data-aiff-fill-all', 'true');
       fillAllBtn.textContent = '⚡ Fill All Fields';
+      fillAllBtn.title = 'Drag to move';
       fillAllBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      fillAllBtn.addEventListener('click', onFillAllClick);
+      fillAllBtn.addEventListener('click', onFillAllClickCapture, true);
       shadow.appendChild(fillAllBtn);
+      makeFillAllDraggable();
+      restoreFillAllPosition();
     } else {
       fillAllBtn = shadow.querySelector('[data-aiff-fill-all]');
     }
+  }
+
+  // ---------- Draggable Fill All button (position persisted per device) ----------
+
+  let fillAllDrag = null;
+  let suppressFillAllClick = false;
+
+  function fillAllPosKey() {
+    return 'fillAllPos';
+  }
+
+  function clampFillAllPos(right, bottom) {
+    const w = 190;
+    const h = 48;
+    return {
+      right: Math.min(Math.max(8, right), Math.max(8, window.innerWidth - w)),
+      bottom: Math.min(Math.max(8, bottom), Math.max(8, window.innerHeight - h))
+    };
+  }
+
+  function applyFillAllPos(right, bottom) {
+    if (!fillAllBtn) return;
+    const p = clampFillAllPos(right, bottom);
+    fillAllBtn.style.right = `${p.right}px`;
+    fillAllBtn.style.bottom = `${p.bottom}px`;
+    fillAllBtn.style.left = 'auto';
+    fillAllBtn.style.top = 'auto';
+  }
+
+  function restoreFillAllPosition() {
+    try {
+      chrome.storage.local.get([fillAllPosKey()], (result) => {
+        if (chrome.runtime.lastError) return;
+        const saved = result && result[fillAllPosKey()];
+        if (saved && typeof saved.right === 'number' && typeof saved.bottom === 'number') {
+          applyFillAllPos(saved.right, saved.bottom);
+        }
+      });
+    } catch {
+      /* storage unavailable — keep default corner */
+    }
+  }
+
+  function makeFillAllDraggable() {
+    if (!fillAllBtn || fillAllBtn.dataset.aiffDrag === '1') return;
+    fillAllBtn.dataset.aiffDrag = '1';
+    fillAllBtn.style.touchAction = 'none';
+
+    fillAllBtn.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      const rect = fillAllBtn.getBoundingClientRect();
+      fillAllDrag = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startRight: window.innerWidth - rect.right,
+        startBottom: window.innerHeight - rect.bottom,
+        moved: false
+      };
+      try {
+        fillAllBtn.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+    });
+
+    fillAllBtn.addEventListener('pointermove', (e) => {
+      if (!fillAllDrag) return;
+      const dx = e.clientX - fillAllDrag.startX;
+      const dy = e.clientY - fillAllDrag.startY;
+      if (!fillAllDrag.moved && Math.hypot(dx, dy) > 6) fillAllDrag.moved = true;
+      if (fillAllDrag.moved) {
+        e.preventDefault();
+        applyFillAllPos(fillAllDrag.startRight - dx, fillAllDrag.startBottom - dy);
+      }
+    });
+
+    const endDrag = (e) => {
+      if (!fillAllDrag) return;
+      if (fillAllDrag.moved) {
+        suppressFillAllClick = true;
+        try {
+          const rect = fillAllBtn.getBoundingClientRect();
+          const pos = {
+            right: window.innerWidth - rect.right,
+            bottom: window.innerHeight - rect.bottom
+          };
+          chrome.storage.local.set({ [fillAllPosKey()]: pos }, () => {});
+        } catch {
+          /* noop */
+        }
+        setTimeout(() => {
+          suppressFillAllClick = false;
+        }, 50);
+      }
+      fillAllDrag = null;
+    };
+    fillAllBtn.addEventListener('pointerup', endDrag);
+    fillAllBtn.addEventListener('pointercancel', endDrag);
+
+    window.addEventListener('resize', () => {
+      if (!fillAllBtn) return;
+      try {
+        const rect = fillAllBtn.getBoundingClientRect();
+        applyFillAllPos(window.innerWidth - rect.right, window.innerHeight - rect.bottom);
+      } catch {
+        /* noop */
+      }
+    });
+  }
+
+  // Capture-phase click: swallows the click that ends a drag so a drag
+  // never triggers a fill.
+  function onFillAllClickCapture(e) {
+    if (suppressFillAllClick) {
+      e.stopPropagation();
+      e.preventDefault();
+      suppressFillAllClick = false;
+      return;
+    }
+    onFillAllClick();
   }
 
   // ---------- Field detection ----------
@@ -314,7 +439,67 @@
         ? (el.previousElementSibling.innerText || '').trim()
         : '';
     if (prev && prev.length <= 120) return prev;
+    // Table column header fallback (invoice-style grids: QTY / RATE / TAX).
+    try {
+      const td = el.closest ? el.closest('td, th') : null;
+      const tr = td && td.parentElement;
+      if (td && tr) {
+        const colIdx = [...tr.children].indexOf(td);
+        const table = el.closest('table');
+        const th =
+          (table && table.querySelectorAll('thead th')[colIdx]) ||
+          (table && table.querySelectorAll('th')[colIdx]);
+        const header = th ? cleanOptionText(th.innerText || th.textContent, 120) : '';
+        if (header) return header;
+      }
+    } catch {
+      /* noop */
+    }
     return '';
+  }
+
+  // Positional context for repeated rows / grids: table row number,
+  // column header, and nearest section heading — so the AI treats
+  // same-label fields as DISTINCT fields with different values.
+  function getPositionContext(el) {
+    const parts = [];
+    try {
+      const td = el.closest ? el.closest('td, th') : null;
+      const tr = td && td.parentElement;
+      if (td && tr) {
+        const rows = [...tr.parentElement.children].filter(
+          (n) => n.tagName && n.tagName.toLowerCase() === tr.tagName.toLowerCase()
+        );
+        const rowIdx = rows.indexOf(tr);
+        if (rowIdx >= 0) parts.push(`table row ${rowIdx + 1} of ${rows.length}`);
+        const cells = [...tr.children];
+        const colIdx = cells.indexOf(td);
+        if (colIdx >= 0) parts.push(`column ${colIdx + 1}`);
+      }
+      // Nearest section heading (walk up, check previous siblings).
+      let node = el;
+      for (let depth = 0; depth < 7 && node && node !== document.body; depth++) {
+        let sib = node.previousElementSibling;
+        let steps = 0;
+        while (sib && steps < 4) {
+          const tag = sib.tagName ? sib.tagName.toLowerCase() : '';
+          if (/^h[1-4]$/.test(tag)) {
+            const text = cleanOptionText(sib.innerText || sib.textContent, 80);
+            if (text) {
+              parts.push(`under heading "${text}"`);
+              node = document.body; // stop outer loop
+              break;
+            }
+          }
+          sib = sib.previousElementSibling;
+          steps++;
+        }
+        node = node.parentElement;
+      }
+    } catch {
+      /* noop */
+    }
+    return parts.join('; ');
   }
 
   function getFormContext(el, maxChars = 800) {
@@ -1021,8 +1206,20 @@
     return { applied: true };
   }
 
+  // Model sometimes returns "$1,500.00" for numeric inputs — browsers reject
+  // that in <input type="number"> and silently clear the field. Sanitize.
+  function sanitizeForNumberInput(strValue) {
+    const m = String(strValue).match(/-?\d[\d,]*\.?\d*/);
+    if (!m) return '';
+    return m[0].replace(/,/g, '');
+  }
+
   function setTextValue(field, strValue) {
     const tag = field.tagName.toLowerCase();
+    if (tag === 'input' && (field.getAttribute('type') || '').toLowerCase() === 'number') {
+      strValue = sanitizeForNumberInput(strValue);
+      if (!strValue) return false;
+    }
     if (tag !== 'input' && tag !== 'textarea') {
       // Generic fallback: set text and notify.
       try {
@@ -1032,7 +1229,7 @@
       }
       field.dispatchEvent(new Event('input', { bubbles: true }));
       field.dispatchEvent(new Event('change', { bubbles: true }));
-      return;
+      return true;
     }
     const proto =
       tag === 'textarea'
@@ -1100,8 +1297,7 @@
       return true;
     }
     // 4. Plain inputs / textareas (+ generic fallback inside setTextValue).
-    setTextValue(field, strValue);
-    return true;
+    return setTextValue(field, strValue) !== false;
   }
 
   // ---------- Single fill ----------
@@ -1170,27 +1366,48 @@
 
   function collectFillableFields() {
     const candidates = queryAllDeep(BATCH_SELECTOR, 500);
-    const fields = [];
-    const elementByUid = new Map();
-    let index = 0;
+    const fillable = [];
 
     for (const el of candidates) {
       if (!isFillable(el) || !isVisible(el)) continue;
-      // Skip fields that already have a non-empty value? No — overwrite is expected for demo,
-      // but skip hidden honeypot traps (display-friendly but off-screen).
+      // Skip hidden honeypot traps (display-friendly but off-screen).
       try {
         const rect = el.getBoundingClientRect();
         if (rect.top < -2000 || rect.left < -2000) continue; // honeypot / off-screen trap
       } catch {
         continue;
       }
-      const uid = `f${index++}`;
-      if (index > MAX_BATCH_FIELDS) break;
-      el.setAttribute('data-aiff-uid', uid);
-      const ctx = extractContext(el);
-      fields.push({ uid, ...ctx, currentValue: (ctx.currentValue || '').slice(0, 200) });
-      elementByUid.set(uid, el);
+      fillable.push(el);
+      if (fillable.length >= MAX_BATCH_FIELDS) break;
     }
+
+    // Group identical fields (repeated invoice rows etc.) so each gets a
+    // distinct occurrence number: "item 2 of 3 with this label".
+    const groupCounts = new Map();
+    const groupKey = (ctx) =>
+      [ctx.kind, ctx.label, ctx.name, ctx.placeholder].join('|').toLowerCase();
+    const contexts = fillable.map((el) => extractContext(el));
+    for (const ctx of contexts) {
+      const key = groupKey(ctx);
+      groupCounts.set(key, (groupCounts.get(key) || 0) + 1);
+    }
+    const groupSeen = new Map();
+    const fields = [];
+    const elementByUid = new Map();
+    contexts.forEach((ctx, i) => {
+      const key = groupKey(ctx);
+      const total = groupCounts.get(key) || 1;
+      const seen = (groupSeen.get(key) || 0) + 1;
+      groupSeen.set(key, seen);
+      const uid = `f${i}`;
+      const positionBits = [getPositionContext(fillable[i])];
+      if (total > 1) positionBits.push(`item ${seen} of ${total} with the same label`);
+      const position = positionBits.filter(Boolean).join('; ');
+      if (position) ctx.position = position;
+      fillable[i].setAttribute('data-aiff-uid', uid);
+      fields.push({ uid, ...ctx, currentValue: (ctx.currentValue || '').slice(0, 200) });
+      elementByUid.set(uid, fillable[i]);
+    });
     return { fields, elementByUid };
   }
 
