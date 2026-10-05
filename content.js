@@ -392,19 +392,25 @@
       }
     };
     try {
+      const seenRoots = new Set();
+      const pushFrom = (root) => {
+        if (!root || seenRoots.has(root)) return;
+        seenRoots.add(root);
+        pushAll(queryOptionNodes(root));
+      };
       const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
       if (controlsId) {
         const popup = document.getElementById(controlsId);
-        if (popup) pushAll(popup.querySelectorAll('[role="option"]'));
+        if (popup) pushFrom(popup);
       }
       if (out.length === 0) {
         const scope =
           (trigger.closest && trigger.closest('[role="dialog"], form, [data-radix-popper-content-wrapper]')) ||
           trigger.parentElement;
-        if (scope) pushAll(scope.querySelectorAll('[role="option"]'));
+        if (scope) pushFrom(scope);
       }
       if (out.length === 0) {
-        pushAll(document.querySelectorAll('[role="listbox"] [role="option"]'));
+        pushFrom(document);
       }
     } catch {
       /* noop */
@@ -577,11 +583,27 @@
 
   // ---------- Framework-safe value insertion ----------
 
+  // Common company-name abbreviations, expanded so "Acme Corp" matches
+  // a rendered "Acme Corporation" (and vice versa). Applied to BOTH sides,
+  // so exact matching keeps working.
+  const ABBR_MAP = {
+    corp: 'corporation',
+    ltd: 'limited',
+    inc: 'incorporated',
+    co: 'company',
+    pvt: 'private',
+    plc: 'public limited company',
+    llc: 'limited liability company'
+  };
+
   function normalizeChoice(s) {
-    return String(s == null ? '' : s)
+    const words = String(s == null ? '' : s)
       .replace(/\s+/g, ' ')
       .trim()
-      .toLowerCase();
+      .toLowerCase()
+      .split(' ')
+      .map((w) => ABBR_MAP[w.replace(/\./g, '')] || w);
+    return words.join(' ');
   }
 
   // Standard <select>: pick the option whose value/text matches best,
@@ -679,40 +701,109 @@
     return null;
   }
 
-  function collectOptionNodes(trigger) {
-    let nodes = [];
+  // Option nodes across libraries: ARIA roles first, then common plain
+  // markup (li, data-value divs, Radix collection items). Scoped to popup /
+  // listbox / menu containers so random page <li>s are never treated as options.
+  const OPTION_INNER_SELECTOR = [
+    '[role="option"]',
+    '[role="menuitemradio"]',
+    '[data-radix-collection-item][data-value]',
+    'li[data-value]',
+    'li[data-option-value]',
+    '[data-option-value]'
+  ].join(', ');
+
+  function queryOptionNodes(root) {
+    const found = [];
+    try {
+      if (!root || !root.querySelectorAll) return found;
+      for (const n of root.querySelectorAll(OPTION_INNER_SELECTOR)) found.push(n);
+      // Plain <li> / item rows inside an explicit listbox/menu container.
+      for (const box of root.querySelectorAll('[role="listbox"], [role="menu"]')) {
+        for (const n of box.querySelectorAll('li, [data-value], div[data-index]')) {
+          found.push(n);
+        }
+      }
+    } catch {
+      /* noop */
+    }
+    return found;
+  }
+
+  function popupContainers(trigger) {
+    const containers = [];
     try {
       const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
       if (controlsId) {
         const popup = document.getElementById(controlsId);
-        if (popup) nodes = [...popup.querySelectorAll('[role="option"]')];
+        if (popup) containers.push(popup);
       }
-      if (nodes.length === 0) {
-        const scope =
-          (trigger.closest && trigger.closest('[role="dialog"], form')) || trigger.parentElement;
-        if (scope) nodes = [...scope.querySelectorAll('[role="option"]')];
-      }
-      if (nodes.length === 0) nodes = [...document.querySelectorAll('[role="listbox"] [role="option"]')];
+      const scope =
+        (trigger.closest && trigger.closest('[role="dialog"], form')) || trigger.parentElement;
+      if (scope) containers.push(scope);
     } catch {
-      nodes = [];
+      /* noop */
     }
+    return containers;
+  }
+
+  function collectOptionNodes(trigger) {
+    const seen = new Set();
+    const nodes = [];
+    const add = (list) => {
+      for (const n of list) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        nodes.push(n);
+      }
+    };
+    for (const c of popupContainers(trigger)) add(queryOptionNodes(c));
+    add(queryOptionNodes(document));
     // Never consider action rows or disabled options as candidates.
     return nodes.filter((n) => !isActionNode(n));
   }
 
-  function findRenderedOption(trigger, target) {
-    const t = normalizeChoice(target);
-    if (!t) return null;
-    const nodes = collectOptionNodes(trigger);
-    if (nodes.length === 0) return null;
+  // Poll for popup options (portals animate in; filters re-render).
+  async function waitForOptionNodes(trigger, timeoutMs = 2000) {
+    const start = Date.now();
+    let nodes = collectOptionNodes(trigger);
+    while (nodes.length === 0 && Date.now() - start < timeoutMs) {
+      await sleep(200);
+      nodes = collectOptionNodes(trigger);
+    }
+    return nodes;
+  }
+
+  function matchNode(nodes, t) {
     const byText = (n) => normalizeChoice(n.innerText || n.textContent);
     const byValue = (n) =>
       normalizeChoice(n.getAttribute('data-value') || n.getAttribute('data-option-value'));
+    const exact =
+      nodes.find((n) => byValue(n) === t || byText(n) === t);
+    if (exact) return exact;
+    const partial =
+      nodes.find((n) => byText(n).includes(t) || (byValue(n) && byValue(n).includes(t)));
+    if (partial) return partial;
+    // Token overlap: "Acme Corporation" matches rendered "Acme Corp"
+    // via the shared significant word "acme". Single shared short words
+    // ("ltd", "co") are NOT enough on their own.
+    const tWords = new Set(t.split(/\s+/).filter((w) => w.length >= 4));
+    if (tWords.size === 0) return null;
     return (
-      nodes.find((n) => byValue(n) === t || byText(n) === t) ||
-      nodes.find((n) => byText(n).includes(t) || (byValue(n) && byValue(n).includes(t))) ||
-      null
+      nodes.find((n) => {
+        const words = byText(n).split(/\s+/).filter((w) => w.length >= 4);
+        const shared = words.filter((w) => tWords.has(w));
+        return shared.length >= 2 || (shared.length === 1 && words.length === 1);
+      }) || null
     );
+  }
+
+  function findRenderedOption(trigger, target, preNodes) {
+    const t = normalizeChoice(target);
+    if (!t) return null;
+    const nodes = Array.isArray(preNodes) ? preNodes : collectOptionNodes(trigger);
+    if (nodes.length === 0) return null;
+    return matchNode(nodes, t);
   }
 
   // Type into a popup search box using the native setter so React/Vue
@@ -735,15 +826,24 @@
     }
   }
 
+  function debug(...args) {
+    try {
+      console.debug('[AIFF]', ...args);
+    } catch {
+      /* noop */
+    }
+  }
+
   // Custom dropdowns (Radix / Shadcn / headless-ui): open the popup and click
   // an EXISTING rendered option. Strict rule: if no rendered option matches
-  // the requested value, the field is left completely untouched (return false)
+  // the requested value, the field is left completely untouched
   // — never invent or display a new value, never click action rows like
   // "+ Add New Client". Synthetic click + input + change events keep
   // React/Vue state in sync.
+  // Returns { applied: boolean, reason: string } for diagnostics.
   async function setComboboxValue(trigger, target) {
     const strTarget = target == null ? '' : String(target).trim();
-    if (!strTarget) return false;
+    if (!strTarget) return { applied: false, reason: 'empty-target' };
     try {
       trigger.focus();
     } catch {
@@ -751,18 +851,33 @@
     }
     const tag = trigger.tagName.toLowerCase();
 
+    // Readonly inputs (e.g. a pill showing "Acme Corp") cannot be typed into:
+    // delegate to the surrounding dropdown trigger instead.
+    if (tag === 'input' && trigger.readOnly) {
+      const parentTrigger =
+        (trigger.closest &&
+          trigger.closest('[role="combobox"], [aria-haspopup="listbox"], [aria-haspopup="menu"], button')) ||
+        null;
+      if (parentTrigger && parentTrigger !== trigger) {
+        return setComboboxValue(parentTrigger, strTarget);
+      }
+      return { applied: false, reason: 'readonly-no-trigger' };
+    }
+
     // Case A: the trigger itself is a typable search box (e.g. the focused
     // "Search clients…" input). Type to filter, click the match, restore on miss.
     if (tag === 'input' || trigger.isContentEditable) {
       const original = tag === 'input' ? trigger.value : trigger.innerText;
       clickNode(trigger);
-      if (!typeIntoSearchBox(trigger, strTarget)) return false;
-      await sleep(400);
+      if (!typeIntoSearchBox(trigger, strTarget)) {
+        return { applied: false, reason: 'type-failed' };
+      }
+      await sleep(500);
       const option = findRenderedOption(trigger, strTarget);
       if (option) {
         clickNode(option);
         trigger.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
+        return { applied: true };
       }
       // No match: restore original text so nothing new is left behind.
       try {
@@ -781,21 +896,26 @@
       } catch {
         /* noop */
       }
-      return false;
+      debug('combobox no match, restored', { target: strTarget });
+      return { applied: false, reason: 'no-match' };
     }
 
-    // Case B: button/div trigger. Open the popup first.
+    // Case B: button/div trigger. Open the popup first, then wait for options
+    // (portals animate in; searchable lists re-render after filtering).
     clickNode(trigger);
-    await sleep(250);
+    let nodes = await waitForOptionNodes(trigger, 1500);
+    debug('combobox popup options', { target: strTarget, count: nodes.length });
 
-    // If the popup has its own search box, filter through it first.
+    // If the popup has its own search box, filter through it, then re-collect.
     const searchBox = findPopupSearchInput(trigger);
     if (searchBox) {
       typeIntoSearchBox(searchBox, strTarget);
-      await sleep(400);
+      await sleep(600);
+      nodes = await waitForOptionNodes(trigger, 1500);
+      debug('combobox after search filter', { target: strTarget, count: nodes.length });
     }
 
-    const option = findRenderedOption(trigger, strTarget);
+    const option = matchNode(nodes, normalizeChoice(strTarget));
     if (!option) {
       // No existing option matches: close the popup (Escape) and touch nothing.
       try {
@@ -804,12 +924,13 @@
       } catch {
         /* noop */
       }
-      return false;
+      debug('combobox no match, untouched', { target: strTarget, seen: nodes.length });
+      return { applied: false, reason: nodes.length === 0 ? 'no-options-rendered' : 'no-match' };
     }
     clickNode(option);
     trigger.dispatchEvent(new Event('input', { bubbles: true }));
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    return { applied: true };
   }
 
   function setTextValue(field, strValue) {
@@ -844,6 +965,25 @@
     field.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  // Last fill diagnostics (used to explain skips to the user).
+  let lastFillInfo = { applied: false, reason: '' };
+
+  function fieldDescribe(el) {
+    try {
+      const label = resolveLabel(el);
+      if (label) return label.slice(0, 60);
+      return (
+        el.getAttribute('name') ||
+        el.getAttribute('placeholder') ||
+        el.getAttribute('aria-label') ||
+        el.id ||
+        el.tagName.toLowerCase()
+      ).slice(0, 60);
+    } catch {
+      return 'field';
+    }
+  }
+
   async function setFieldValue(field, value) {
     const strValue = value == null ? '' : String(value);
     const tag = field.tagName.toLowerCase();
@@ -851,7 +991,12 @@
     if (tag === 'select') return setSelectValue(field, strValue);
     // 2. Custom dropdown triggers (existing options only; may need to wait
     //    for the popup / search filter, hence async).
-    if (fieldKind(field) === 'combobox') return setComboboxValue(field, strValue);
+    if (fieldKind(field) === 'combobox') {
+      const res = await setComboboxValue(field, strValue);
+      lastFillInfo =
+        res && typeof res === 'object' ? res : { applied: !!res, reason: '' };
+      return lastFillInfo.applied;
+    }
     // 3. Rich-text editors.
     if (isRichText(field)) {
       field.focus();
@@ -911,10 +1056,11 @@
       if (!applied) {
         const kind = fieldKind(field);
         const isDropdown = field.tagName.toLowerCase() === 'select' || kind === 'combobox';
+        const reason = lastFillInfo.reason ? ` (reason: ${lastFillInfo.reason})` : '';
         setSingleState('error', '⚠️ No match');
         alert(
           isDropdown
-            ? `No existing dropdown option matches "${String(fillText).slice(0, 120)}". Nothing was changed — only options already in the list can be selected.`
+            ? `No existing dropdown option matches "${String(fillText).slice(0, 120)}"${reason}. Nothing was changed — only options already in the list can be selected. Tip: open DevTools console and look for [AIFF] logs.`
             : 'Could not fill this field. Nothing was changed.'
         );
         setTimeout(() => {
@@ -1006,7 +1152,7 @@
     try {
       const values = response.values || {};
       let filled = 0;
-      let skipped = 0;
+      const skippedLabels = [];
       for (const [uid, text] of Object.entries(values)) {
         const el = elementByUid.get(uid);
         if (!el || !el.isConnected) continue;
@@ -1014,12 +1160,17 @@
         try {
           // Dropdowns resolve to false when no existing option matches —
           // those fields are counted as skipped, never force-filled.
+          lastFillInfo = { applied: false, reason: '' };
           const applied = await setFieldValue(el, text);
-          if (applied) filled += 1;
-          else skipped += 1;
+          if (applied) {
+            filled += 1;
+          } else {
+            const why = lastFillInfo.reason ? ` (${lastFillInfo.reason})` : '';
+            skippedLabels.push(`${fieldDescribe(el)}${why}`);
+          }
         } catch {
           /* skip failing field, continue with the rest */
-          skipped += 1;
+          skippedLabels.push(fieldDescribe(el));
         }
       }
       // Clean up tracking attributes.
@@ -1030,13 +1181,18 @@
           /* noop */
         }
       }
+      const skipped = skippedLabels.length;
       if (filled === 0) {
         setFillAllState('error', '⚠️ Nothing filled');
-        alert('The model returned no usable values for the detected fields.');
+        alert(
+          skipped > 0
+            ? `Nothing filled. Skipped dropdowns: ${skippedLabels.slice(0, 5).join('; ')}. Only existing options can be selected.`
+            : 'The model returned no usable values for the detected fields.'
+        );
       } else if (skipped > 0) {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
         alert(
-          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped — no existing option matched, so nothing new was selected there.`
+          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped — no existing option matched, so nothing new was selected there. Skipped: ${skippedLabels.slice(0, 5).join('; ')}.`
         );
       } else {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
