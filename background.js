@@ -194,6 +194,7 @@ function buildSinglePrompt(context) {
       `Available options (value, or value (label)): ${optionsText || '(none provided — reply with a short standard choice)'}`,
       '',
       'STRICT: Return ONLY the exact option VALUE from the list above — copy it verbatim.',
+      'Only a value already in the list may be returned. Never invent, combine, or rephrase into something new.',
       'No quotes, no markdown, no explanation, no preamble.'
     ].join('\n');
   }
@@ -255,8 +256,8 @@ function generateFullFormSuggestion(fields, pageMeta) {
     '1. Return ONLY a single valid JSON object mapping each uid to its fill value.',
     '2. Example: {"f0": "John Doe", "f1": "john@example.com", "f2": "us"}',
     '3. Include EVERY uid exactly once. Values must be plain strings (use "" for a field you truly cannot fill).',
-    '4. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields.',
-    '5. For kind "combobox" fields WITH an options list: prefer one of the listed options (exact value). With NO options list: return a short, standard choice as plain text (e.g. a country name or category).',
+    '4. For fields with type "select" (or kind "select") that list an options=[...] array: the value MUST be exactly one option value present in that array — copy it verbatim. NEVER invent a value for select fields. If no option fits, use "".',
+    '5. For kind "combobox" fields WITH an options list: the value MUST be exactly one of the listed options (exact value, verbatim) — only values already in the list may be selected, never anything new. With NO options list (unrendered popup): return a short, standard choice as plain text (e.g. a country name or category).',
     '6. NO markdown, NO code fences, NO explanation, NO surrounding text — raw JSON only.'
   ].join('\n');
 }

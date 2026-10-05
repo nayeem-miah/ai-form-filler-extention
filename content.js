@@ -352,14 +352,36 @@
     return out;
   }
 
+  // Action rows (e.g. "+ Add New Client", "Create new…") are commands,
+  // NOT selectable values — they must never be offered to the AI or clicked.
+  const ACTION_ITEM_RE = /^\s*(\+\s*)?(add new|create new|create\b|add\b|manage|view all|see all)\b/i;
+
+  function isActionNode(n) {
+    try {
+      if (n.getAttribute && n.getAttribute('aria-disabled') === 'true') return true;
+      if (n.disabled) return true;
+      const text = cleanOptionText(n.innerText || n.textContent, 80);
+      return ACTION_ITEM_RE.test(text);
+    } catch {
+      return false;
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   // Custom dropdown: collect rendered option texts if the popup is in the DOM.
   // Looks at aria-controls target, then nearby listbox containers.
+  // Action rows ("+ Add New Client", …) and disabled options are excluded —
+  // only genuinely selectable values are collected.
   function getRenderedListboxOptions(trigger, maxOptions = 60) {
     const out = [];
     const seen = new Set();
     const pushAll = (nodes) => {
       for (const n of nodes) {
         if (out.length >= maxOptions) break;
+        if (isActionNode(n)) continue;
         const text = cleanOptionText(n.innerText || n.textContent);
         if (!text || seen.has(text)) continue;
         seen.add(text);
@@ -564,22 +586,21 @@
 
   // Standard <select>: pick the option whose value/text matches best,
   // then dispatch change + input so React/Vue/Angular detect it.
+  // Strict: with NO match the select is left untouched (return false) —
+  // never auto-pick an unrelated option.
   function setSelectValue(selectEl, target) {
     const t = normalizeChoice(target);
+    if (!t) return false;
     const opts = [...selectEl.options];
-    let match = null;
-    if (t) {
-      match =
-        opts.find((o) => normalizeChoice(o.value) === t) ||
-        opts.find((o) => normalizeChoice(o.text) === t) ||
-        opts.find(
-          (o) => normalizeChoice(o.text).includes(t) || normalizeChoice(o.value).includes(t)
-        ) ||
-        null;
-    }
-    const chosen =
-      match || opts.find((o) => o.value !== '' && !o.disabled) || opts[0] || null;
-    if (!chosen) return false;
+    const match =
+      opts.find((o) => normalizeChoice(o.value) === t) ||
+      opts.find((o) => normalizeChoice(o.text) === t) ||
+      opts.find(
+        (o) => normalizeChoice(o.text).includes(t) || normalizeChoice(o.value).includes(t)
+      ) ||
+      null;
+    if (!match || match.disabled) return false;
+    const chosen = match;
     try {
       selectEl.focus();
     } catch {
@@ -626,11 +647,39 @@
     }
   }
 
-  function findRenderedOption(trigger, target) {
-    const t = normalizeChoice(target);
-    if (!t) return null;
-    const candidates = getRenderedListboxOptions(trigger, 200).map((o, i) => ({ ...o, _i: i }));
-    // Re-query live nodes for clicking (getRenderedListboxOptions returns data only).
+  // Locate the filter/search box inside an open dropdown popup
+  // (e.g. the "Search clients…" input in the screenshot).
+  function findPopupSearchInput(trigger) {
+    const selector =
+      'input[type="search"], input[placeholder*="earch" i], input[aria-label*="earch" i]';
+    try {
+      const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
+      if (controlsId) {
+        const popup = document.getElementById(controlsId);
+        if (popup) {
+          const found = popup.querySelector(selector);
+          if (found && isVisible(found)) return found;
+        }
+      }
+      // Popup is often a portal sibling right after the trigger container.
+      let node = trigger.parentElement;
+      for (let depth = 0; depth < 3 && node; depth++) {
+        const found = node.querySelector(':scope [role="listbox"] ' + selector.split(',')[0]) ||
+          node.querySelector(selector);
+        if (found && found !== trigger && isVisible(found)) return found;
+        node = node.parentElement;
+      }
+      const all = document.querySelectorAll('[role="listbox"] input, [role="dialog"] input[type="search"]');
+      for (const input of all) {
+        if (input !== trigger && isVisible(input)) return input;
+      }
+    } catch {
+      /* noop */
+    }
+    return null;
+  }
+
+  function collectOptionNodes(trigger) {
     let nodes = [];
     try {
       const controlsId = trigger.getAttribute && trigger.getAttribute('aria-controls');
@@ -647,6 +696,14 @@
     } catch {
       nodes = [];
     }
+    // Never consider action rows or disabled options as candidates.
+    return nodes.filter((n) => !isActionNode(n));
+  }
+
+  function findRenderedOption(trigger, target) {
+    const t = normalizeChoice(target);
+    if (!t) return null;
+    const nodes = collectOptionNodes(trigger);
     if (nodes.length === 0) return null;
     const byText = (n) => normalizeChoice(n.innerText || n.textContent);
     const byValue = (n) =>
@@ -658,40 +715,98 @@
     );
   }
 
-  // Custom dropdowns (Radix / Shadcn / headless-ui): open the popup, click the
-  // best-matching rendered option if present, otherwise set the visible label.
-  // Synthetic click + input + change events keep React/Vue state in sync.
-  function setComboboxValue(trigger, target) {
-    const strTarget = target == null ? '' : String(target);
+  // Type into a popup search box using the native setter so React/Vue
+  // controlled inputs filter the option list.
+  function typeIntoSearchBox(searchBox, text) {
+    try {
+      searchBox.focus();
+      const proto = window.HTMLInputElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (descriptor && typeof descriptor.set === 'function') {
+        descriptor.set.call(searchBox, text);
+      } else {
+        searchBox.value = text;
+      }
+      searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+      searchBox.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Custom dropdowns (Radix / Shadcn / headless-ui): open the popup and click
+  // an EXISTING rendered option. Strict rule: if no rendered option matches
+  // the requested value, the field is left completely untouched (return false)
+  // — never invent or display a new value, never click action rows like
+  // "+ Add New Client". Synthetic click + input + change events keep
+  // React/Vue state in sync.
+  async function setComboboxValue(trigger, target) {
+    const strTarget = target == null ? '' : String(target).trim();
+    if (!strTarget) return false;
     try {
       trigger.focus();
     } catch {
       /* noop */
     }
-    // Typable combobox (input or editable): type into it.
     const tag = trigger.tagName.toLowerCase();
+
+    // Case A: the trigger itself is a typable search box (e.g. the focused
+    // "Search clients…" input). Type to filter, click the match, restore on miss.
     if (tag === 'input' || trigger.isContentEditable) {
+      const original = tag === 'input' ? trigger.value : trigger.innerText;
       clickNode(trigger);
-      setTextValue(trigger, strTarget);
-      return true;
-    }
-    // Open the popup, then click the best match if options are rendered.
-    clickNode(trigger);
-    const option = findRenderedOption(trigger, strTarget);
-    if (option) {
-      clickNode(option);
-    } else if (strTarget) {
-      // No rendered options (virtualized / lazy popup): set visible label text
-      // so the requested choice is at least displayed and announced.
-      const labelNode =
-        trigger.querySelector('[data-slot="select-value"], [data-radix-select-value], span') ||
-        trigger;
+      if (!typeIntoSearchBox(trigger, strTarget)) return false;
+      await sleep(400);
+      const option = findRenderedOption(trigger, strTarget);
+      if (option) {
+        clickNode(option);
+        trigger.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+      // No match: restore original text so nothing new is left behind.
       try {
-        labelNode.textContent = strTarget;
+        if (tag === 'input') {
+          const proto = window.HTMLInputElement.prototype;
+          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+          if (descriptor && typeof descriptor.set === 'function') {
+            descriptor.set.call(trigger, original);
+          } else {
+            trigger.value = original;
+          }
+        } else {
+          trigger.innerText = original;
+        }
+        trigger.dispatchEvent(new Event('input', { bubbles: true }));
       } catch {
         /* noop */
       }
+      return false;
     }
+
+    // Case B: button/div trigger. Open the popup first.
+    clickNode(trigger);
+    await sleep(250);
+
+    // If the popup has its own search box, filter through it first.
+    const searchBox = findPopupSearchInput(trigger);
+    if (searchBox) {
+      typeIntoSearchBox(searchBox, strTarget);
+      await sleep(400);
+    }
+
+    const option = findRenderedOption(trigger, strTarget);
+    if (!option) {
+      // No existing option matches: close the popup (Escape) and touch nothing.
+      try {
+        trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      } catch {
+        /* noop */
+      }
+      return false;
+    }
+    clickNode(option);
     trigger.dispatchEvent(new Event('input', { bubbles: true }));
     trigger.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
@@ -729,12 +844,13 @@
     field.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  function setFieldValue(field, value) {
+  async function setFieldValue(field, value) {
     const strValue = value == null ? '' : String(value);
     const tag = field.tagName.toLowerCase();
-    // 1. Native dropdowns.
+    // 1. Native dropdowns (existing options only).
     if (tag === 'select') return setSelectValue(field, strValue);
-    // 2. Custom dropdown triggers.
+    // 2. Custom dropdown triggers (existing options only; may need to wait
+    //    for the popup / search filter, hence async).
     if (fieldKind(field) === 'combobox') return setComboboxValue(field, strValue);
     // 3. Rich-text editors.
     if (isRichText(field)) {
@@ -791,7 +907,21 @@
         response && typeof response.value === 'string' && response.value !== ''
           ? response.value
           : response.text;
-      const applied = setFieldValue(field, fillText);
+      const applied = await setFieldValue(field, fillText);
+      if (!applied) {
+        const kind = fieldKind(field);
+        const isDropdown = field.tagName.toLowerCase() === 'select' || kind === 'combobox';
+        setSingleState('error', '⚠️ No match');
+        alert(
+          isDropdown
+            ? `No existing dropdown option matches "${String(fillText).slice(0, 120)}". Nothing was changed — only options already in the list can be selected.`
+            : 'Could not fill this field. Nothing was changed.'
+        );
+        setTimeout(() => {
+          if (activeField === field) setSingleState('idle');
+        }, 2000);
+        return;
+      }
       setSingleState('success');
       positionSingleButton();
       setTimeout(() => {
@@ -876,15 +1006,20 @@
     try {
       const values = response.values || {};
       let filled = 0;
+      let skipped = 0;
       for (const [uid, text] of Object.entries(values)) {
         const el = elementByUid.get(uid);
         if (!el || !el.isConnected) continue;
         if (typeof text !== 'string' || text === '') continue;
         try {
-          setFieldValue(el, text);
-          filled += 1;
+          // Dropdowns resolve to false when no existing option matches —
+          // those fields are counted as skipped, never force-filled.
+          const applied = await setFieldValue(el, text);
+          if (applied) filled += 1;
+          else skipped += 1;
         } catch {
           /* skip failing field, continue with the rest */
+          skipped += 1;
         }
       }
       // Clean up tracking attributes.
@@ -898,6 +1033,11 @@
       if (filled === 0) {
         setFillAllState('error', '⚠️ Nothing filled');
         alert('The model returned no usable values for the detected fields.');
+      } else if (skipped > 0) {
+        setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
+        alert(
+          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped — no existing option matched, so nothing new was selected there.`
+        );
       } else {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
       }
