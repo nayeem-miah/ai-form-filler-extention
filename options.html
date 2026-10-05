@@ -33,8 +33,34 @@
     <label class="aiff-label" for="providerSelect">Provider</label>
     <select id="providerSelect" class="aiff-select">
       <option value="gemini">Google Gemini</option>
-      <option value="openai">OpenAI</option>
+      <option value="openai">OpenAI (Official)</option>
+      <option value="custom">OpenAI Compatible / Custom API</option>
     </select>
+
+    <!-- Shown only for the OpenAI Compatible / Custom API provider -->
+    <div id="customSection" hidden>
+      <label class="aiff-label" for="apiBaseUrl">API Base URL</label>
+      <input
+        id="apiBaseUrl"
+        class="aiff-input"
+        type="url"
+        placeholder="https://openrouter.ai/api/v1"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <p class="aiff-hint">Examples: <code>https://openrouter.ai/api/v1</code> · <code>https://api.groq.com/openai/v1</code> · <code>http://localhost:11434/v1</code></p>
+
+      <label class="aiff-label" for="customModel">Model Name</label>
+      <input
+        id="customModel"
+        class="aiff-input"
+        type="text"
+        placeholder="deepseek/deepseek-r1"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <p class="aiff-hint">Examples: <code>deepseek/deepseek-r1</code> · <code>llama-3.3-70b-versatile</code> · <code>mistral-7b-instruct</code> · <code>llama3.1:8b</code></p>
+    </div>
 
     <label class="aiff-label" for="apiKey" id="apiKeyLabel">API Key</label>
     <div class="aiff-input-wrap">
@@ -53,6 +79,7 @@
         </svg>
       </button>
     </div>
+    <p class="aiff-hint" id="keyHint">Leave empty for local servers such as Ollama.</p>
 
     <label class="aiff-label" for="modelSelect">Model</label>
     <select id="modelSelect" class="aiff-select"></select>

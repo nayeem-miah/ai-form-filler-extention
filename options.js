@@ -29,20 +29,34 @@ const PROVIDERS = {
     defaultModel: 'gemini-2.5-flash',
     keyLabel: 'Gemini API Key',
     keyPlaceholder: 'AIza...',
+    keyHint: '',
     keyLink: 'https://aistudio.google.com/app/apikey',
     keyLinkText: 'Get a Gemini key'
   },
   openai: {
-    label: 'OpenAI',
+    label: 'OpenAI (Official)',
     models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
     defaultModel: 'gpt-4o-mini',
     keyLabel: 'OpenAI API Key',
     keyPlaceholder: 'sk-...',
+    keyHint: '',
     keyLink: 'https://platform.openai.com/api-keys',
     keyLinkText: 'Get an OpenAI key'
+  },
+  custom: {
+    label: 'OpenAI Compatible / Custom API',
+    models: [],
+    defaultModel: '',
+    freeModel: true,
+    keyLabel: 'API Key (optional)',
+    keyPlaceholder: 'sk-or-v1-...',
+    keyHint: 'Leave empty for local servers such as Ollama or LM Studio.',
+    keyLink: 'https://openrouter.ai/models',
+    keyLinkText: 'Browse compatible providers'
   }
 };
 const DEFAULT_PROVIDER = 'gemini';
+const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_THEME = 'light';
 
 // Static SVG icon strings (no emojis in the UI; CSP-safe — no code execution).
@@ -56,7 +70,8 @@ const ICON_MOON =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 
 function normalizeProvider(value) {
-  return value === 'openai' ? 'openai' : DEFAULT_PROVIDER;
+  if (value === 'openai' || value === 'custom') return value;
+  return DEFAULT_PROVIDER;
 }
 
 function defaultModelFor(provider) {
@@ -70,8 +85,12 @@ function modelLabel(provider, id) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const providerSelect = document.getElementById('providerSelect');
+  const customSection = document.getElementById('customSection');
+  const baseUrlInput = document.getElementById('apiBaseUrl');
+  const customModelInput = document.getElementById('customModel');
   const apiKeyLabel = document.getElementById('apiKeyLabel');
   const apiKeyInput = document.getElementById('apiKey');
+  const keyHint = document.getElementById('keyHint');
   const modelSelect = document.getElementById('modelSelect');
   const keyLink = document.getElementById('keyLink');
   const saveBtn = document.getElementById('saveBtn');
@@ -85,12 +104,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentProvider = DEFAULT_PROVIDER;
   // Per-provider keys held in memory; persisted on Save.
   // Legacy single `apiKey` slot migrates into the Gemini slot on load.
-  const providerKeys = { gemini: '', openai: '' };
+  const providerKeys = { gemini: '', openai: '', custom: '' };
 
-  // ---- Build model dropdown for a provider ----
+  // ---- Build model dropdown for a provider (custom uses free-text instead) ----
   function buildModelOptions(provider, selected) {
     const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
     modelSelect.textContent = '';
+
+    // Custom providers have an open-ended model list -> hide the dropdown and
+    // use the dedicated "Model Name" text field instead.
+    const useCustomModel = Boolean(catalog.freeModel);
+    modelSelect.hidden = useCustomModel;
+    if (useCustomModel) return;
+
     for (const id of catalog.models) {
       const opt = document.createElement('option');
       opt.value = id;
@@ -104,13 +130,16 @@ document.addEventListener('DOMContentLoaded', () => {
       opt.textContent = `${selected} (saved)`;
       modelSelect.appendChild(opt);
     }
-    modelSelect.value = selected && [...modelSelect.options].some((o) => o.value === selected)
-      ? selected
-      : catalog.defaultModel;
+    modelSelect.value =
+      selected && [...modelSelect.options].some((o) => o.value === selected)
+        ? selected
+        : catalog.defaultModel;
   }
 
   function currentModel() {
-    return modelSelect.value || defaultModelFor(currentProvider);
+    const catalog = PROVIDERS[currentProvider] || PROVIDERS[DEFAULT_PROVIDER];
+    if (catalog.freeModel) return customModelInput.value.trim();
+    return modelSelect.value || catalog.defaultModel;
   }
 
   // ---- Apply provider to the whole form ----
@@ -121,7 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
     apiKeyLabel.textContent = catalog.keyLabel;
     apiKeyInput.placeholder = catalog.keyPlaceholder;
     apiKeyInput.value = providerKeys[currentProvider] || '';
-    buildModelOptions(currentProvider, modelToSelect || defaultModelFor(currentProvider));
+    keyHint.textContent = catalog.keyHint || '';
+    keyHint.hidden = !catalog.keyHint;
+    customSection.hidden = !catalog.freeModel;
+    buildModelOptions(currentProvider, modelToSelect || catalog.defaultModel);
     keyLink.href = catalog.keyLink;
     keyLink.textContent = catalog.keyLinkText;
   }
@@ -188,11 +220,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ---- Load saved settings (with legacy single-key migration) ----
+  // ---- Host permission for custom endpoints (requested on Save) ----
+function originPatternFor(url) {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}/*`;
+  } catch {
+    return null;
+  }
+}
+
+function hasHostPermission(url) {
+  return new Promise((resolve) => {
+    const origin = originPatternFor(url);
+    if (!origin || !chrome.permissions) {
+      resolve(false);
+      return;
+    }
+    try {
+      chrome.permissions.contains({ origins: [origin] }, (has) => {
+        resolve(Boolean(has));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+// Must run inside the Save click's user gesture, so it uses the callback form
+// of chrome.permissions.request directly.
+function requestHostPermission(url, onResult) {
+  const origin = originPatternFor(url);
+  if (!origin || !chrome.permissions) {
+    onResult(false, 'Could not read that URL. Use a full URL, e.g. https://openrouter.ai/api/v1');
+    return;
+  }
+  try {
+    chrome.permissions.request({ origins: [origin] }, (granted) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        onResult(false, err.message);
+        return;
+      }
+      onResult(Boolean(granted), granted ? '' : 'Permission denied for that host.');
+    });
+  } catch (e) {
+    onResult(false, String((e && e.message) || e));
+  }
+}
+
+// ---- Load saved settings (with legacy single-key migration) ----
   applyProvider(DEFAULT_PROVIDER, defaultModelFor(DEFAULT_PROVIDER));
   try {
     chrome.storage.sync.get(
-      ['provider', 'model', 'geminiApiKey', 'openaiApiKey', 'apiKey', 'theme'],
+      [
+        'provider',
+        'model',
+        'geminiApiKey',
+        'openaiApiKey',
+        'customApiKey',
+        'apiBaseUrl',
+        'customModel',
+        'apiKey',
+        'theme'
+      ],
       (result) => {
         if (chrome.runtime.lastError) {
           setStatus(`Could not load settings: ${chrome.runtime.lastError.message}`, 'error');
@@ -209,13 +300,33 @@ document.addEventListener('DOMContentLoaded', () => {
           '';
         providerKeys.openai =
           (typeof res.openaiApiKey === 'string' && res.openaiApiKey.trim()) || '';
-        const savedModel =
-          typeof res.model === 'string' && res.model.trim()
-            ? res.model.trim()
-            : defaultModelFor(provider);
-        applyProvider(provider, savedModel);
+        providerKeys.custom =
+          (typeof res.customApiKey === 'string' && res.customApiKey.trim()) || '';
+        baseUrlInput.value =
+          (typeof res.apiBaseUrl === 'string' && res.apiBaseUrl.trim()) || DEFAULT_BASE_URL;
+        customModelInput.value =
+          (typeof res.customModel === 'string' && res.customModel.trim()) || '';
+
+        if (provider === 'custom') {
+          // Custom model lives in its own field, not the dropdown.
+          applyProvider(provider, '');
+          customModelInput.value = customModelInput.value || '';
+        } else {
+          const savedModel =
+            typeof res.model === 'string' && res.model.trim()
+              ? res.model.trim()
+              : defaultModelFor(provider);
+          applyProvider(provider, savedModel);
+        }
         setFavicon(Boolean(providerKeys[provider]));
-        if (res.provider || res.model || res.geminiApiKey || res.openaiApiKey || res.apiKey) {
+        if (
+          res.provider ||
+          res.model ||
+          res.geminiApiKey ||
+          res.openaiApiKey ||
+          res.customApiKey ||
+          res.apiKey
+        ) {
           setStatus('Settings loaded from storage.', 'info');
         }
       }
@@ -241,14 +352,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // for the newly selected provider in this session, keep it; else default.
   const lastModelByProvider = {};
   function currentModelBelongingTo(provider) {
-    if (provider === currentProvider) return currentModel();
-    return lastModelByProvider[provider] || defaultModelFor(provider);
+    const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
+    if (catalog.freeModel) return ''; // free-text model field
+    if (provider === currentProvider) return modelSelect.value;
+    return lastModelByProvider[provider] || catalog.defaultModel;
   }
 
   // ---- Provider switch (stashes current input, restores the other slot) ----
   providerSelect.addEventListener('change', () => {
     providerKeys[currentProvider] = apiKeyInput.value.trim();
-    lastModelByProvider[currentProvider] = currentModel();
+    if (!PROVIDERS[currentProvider].freeModel) {
+      lastModelByProvider[currentProvider] = modelSelect.value;
+    }
     const next = normalizeProvider(providerSelect.value);
     applyProvider(next, currentModelBelongingTo(next));
     chrome.storage.sync.set({ provider: next }, () => {
@@ -263,42 +378,97 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ---- Save provider + model + key ----
+  // ---- Save provider + model + key (+ custom base URL) ----
   saveBtn.addEventListener('click', () => {
+    const catalog = PROVIDERS[currentProvider];
     const key = apiKeyInput.value.trim();
     const model = currentModel();
-    if (!key) {
-      setStatus(`Please paste your ${PROVIDERS[currentProvider].label} API key first.`, 'error');
+    const isCustom = Boolean(catalog.freeModel);
+
+    if (isCustom) {
+      const baseUrl = baseUrlInput.value.trim();
+      if (!baseUrl) {
+        setStatus('Enter an API Base URL, e.g. https://openrouter.ai/api/v1', 'error');
+        baseUrlInput.focus();
+        return;
+      }
+      if (!originPatternFor(baseUrl)) {
+        setStatus('That API Base URL is not valid. Include https:// and the host.', 'error');
+        baseUrlInput.focus();
+        return;
+      }
+      if (!model) {
+        setStatus('Enter a model name, e.g. deepseek/deepseek-r1', 'error');
+        customModelInput.focus();
+        return;
+      }
+    } else if (!key) {
+      setStatus(`Please paste your ${catalog.label} API key first.`, 'error');
       apiKeyInput.focus();
       return;
     }
+
     providerKeys[currentProvider] = key;
     setBusy(true, 'Saving…');
-    const payload = {
-      provider: currentProvider,
-      model,
-      geminiApiKey: providerKeys.gemini,
-      openaiApiKey: providerKeys.openai
+
+    const persist = () => {
+      const payload = {
+        provider: currentProvider,
+        model: isCustom ? currentModel() : model,
+        geminiApiKey: providerKeys.gemini,
+        openaiApiKey: providerKeys.openai,
+        customApiKey: providerKeys.custom,
+        apiBaseUrl: baseUrlInput.value.trim().replace(/\/+$/, '') || DEFAULT_BASE_URL,
+        customModel: customModelInput.value.trim()
+      };
+      // Legacy mirror: old single `apiKey` slot always reflects the Gemini key.
+      payload.apiKey = providerKeys.gemini;
+      chrome.storage.sync.set(payload, () => {
+        setBusy(false);
+        if (chrome.runtime.lastError) {
+          setStatus(`Save failed: ${chrome.runtime.lastError.message}`, 'error');
+          return;
+        }
+        setStatus(`Settings saved. ${catalog.label}: ${model}.`, 'success');
+        setFavicon(true);
+      });
     };
-    // Legacy mirror: old single `apiKey` slot always reflects the Gemini key.
-    payload.apiKey = providerKeys.gemini;
-    chrome.storage.sync.set(payload, () => {
-      setBusy(false);
-      if (chrome.runtime.lastError) {
-        setStatus(`Save failed: ${chrome.runtime.lastError.message}`, 'error');
-        return;
-      }
-      setStatus(`Settings saved. ${PROVIDERS[currentProvider].label}: ${model}.`, 'success');
-      setFavicon(true);
-    });
+
+    if (isCustom) {
+      const baseUrl = baseUrlInput.value.trim();
+      // Custom endpoints need a host permission — ask inside this click.
+      hasHostPermission(baseUrl).then((has) => {
+        if (has) {
+          persist();
+          return;
+        }
+        requestHostPermission(baseUrl, (granted, errMessage) => {
+          if (granted) {
+            persist();
+            return;
+          }
+          setBusy(false);
+          setStatus(
+            `Cannot reach ${originPatternFor(baseUrl) || baseUrl} — ${errMessage || 'permission denied'}`,
+            'error'
+          );
+        });
+      });
+    } else {
+      persist();
+    }
   });
 
-  // ---- Remove current provider key (keeps model + theme + other key) ----
+  // ---- Remove current provider key (keeps model + theme + other keys) ----
   clearBtn.addEventListener('click', () => {
     setBusy(true, 'Saving…');
     providerKeys[currentProvider] = '';
     apiKeyInput.value = '';
-    const payload = { geminiApiKey: providerKeys.gemini, openaiApiKey: providerKeys.openai };
+    const payload = {
+      geminiApiKey: providerKeys.gemini,
+      openaiApiKey: providerKeys.openai,
+      customApiKey: providerKeys.custom
+    };
     payload.apiKey = providerKeys.gemini;
     chrome.storage.sync.set(payload, () => {
       setBusy(false);
@@ -306,31 +476,46 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus(`Remove failed: ${chrome.runtime.lastError.message}`, 'error');
         return;
       }
-      setStatus(
-        `${PROVIDERS[currentProvider].label} key removed. Other settings kept.`,
-        'info'
-      );
+      setStatus(`${PROVIDERS[currentProvider].label} key removed. Other settings kept.`, 'info');
       setFavicon(false);
     });
   });
 
   // ---- Test connection via background service worker ----
   testBtn.addEventListener('click', async () => {
+    const catalog = PROVIDERS[currentProvider];
     const key = apiKeyInput.value.trim();
     const model = currentModel();
-    if (!key) {
+    const isCustom = Boolean(catalog.freeModel);
+
+    if (isCustom) {
+      const baseUrl = baseUrlInput.value.trim();
+      if (!baseUrl || !originPatternFor(baseUrl)) {
+        setStatus('Enter a valid API Base URL, e.g. https://openrouter.ai/api/v1', 'error');
+        baseUrlInput.focus();
+        return;
+      }
+      if (!model) {
+        setStatus('Enter a model name, e.g. deepseek/deepseek-r1', 'error');
+        customModelInput.focus();
+        return;
+      }
+    } else if (!key) {
       setStatus('Paste a key first, then click Test.', 'error');
       apiKeyInput.focus();
       return;
     }
+
     setBusy(true);
-    setStatus(`Testing ${PROVIDERS[currentProvider].label} ${model}…`, 'info');
+    setStatus(`Testing ${catalog.label} ${model}…`, 'info');
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'AIFF_TEST',
         provider: currentProvider,
         apiKey: key,
-        model
+        model,
+        apiBaseUrl: isCustom ? baseUrlInput.value.trim() : '',
+        customModel: isCustom ? customModelInput.value.trim() : ''
       });
       if (response && response.ok) {
         setStatus(
@@ -358,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ---- Persist model immediately on change (key untouched) ----
+  // ---- Persist dropdown model immediately on change (custom uses its own field) ----
   modelSelect.addEventListener('change', () => {
     const model = currentModel();
     lastModelByProvider[currentProvider] = model;
@@ -368,6 +553,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       setStatus(`Model set to ${model}. Click Save to store it with your key.`, 'info');
+    });
+  });
+
+  // ---- Custom model name (saved together with the key on Save) ----
+  customModelInput.addEventListener('change', () => {
+    const model = customModelInput.value.trim();
+    if (!model) return;
+    chrome.storage.sync.set({ customModel: model }, () => {
+      if (chrome.runtime.lastError) {
+        setStatus(`Could not save model name: ${chrome.runtime.lastError.message}`, 'error');
+        return;
+      }
+      setStatus(`Model name set to ${model}. Click Save to store it with your key.`, 'info');
     });
   });
 

@@ -1,9 +1,11 @@
 // background.js — MV3 Service Worker (module)
 // All LLM API calls live here (avoids CORS, keeps API keys out of content scripts).
 // Supports: single-field fill, batch form fill (JSON), connection test, open options.
-// Providers: Google Gemini and OpenAI — routed by the user's saved `provider`.
+// Providers: Google Gemini, OpenAI, and any OpenAI-compatible API
+// (OpenRouter, Groq, Together AI, DeepSeek, Ollama, custom local servers).
 
 // Per-provider catalogs shown in the options UI.
+// `custom` has no fixed model list — the user types the model id.
 const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
@@ -25,27 +27,41 @@ const PROVIDERS = {
     defaultModel: 'gemini-2.5-flash'
   },
   openai: {
-    label: 'OpenAI',
+    label: 'OpenAI (Official)',
     models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
     defaultModel: 'gpt-4o-mini'
+  },
+  custom: {
+    label: 'OpenAI Compatible / Custom API',
+    models: [],
+    defaultModel: '',
+    freeModel: true
   }
 };
 const DEFAULT_PROVIDER = 'gemini';
 
 function normalizeProvider(value) {
-  return value === 'openai' ? 'openai' : DEFAULT_PROVIDER;
+  if (value === 'openai' || value === 'custom') return value;
+  return DEFAULT_PROVIDER;
 }
 
 // Allowlist + safe-pattern fallback: accept listed models plus any sane
 // future id for that provider (gemini-*, gpt-*, o-series, chatgpt-*).
+// For `custom`, any safe-looking id is accepted — including slashes and
+// colons used by model ids like `deepseek/deepseek-r1` or `llama3:8b`.
 function normalizeModel(provider, value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
   const catalog = PROVIDERS[provider] || PROVIDERS[DEFAULT_PROVIDER];
-  if (typeof value === 'string') {
-    const v = value.trim();
-    if (catalog.models.includes(v)) return v;
-    if (/^[a-z0-9][a-z0-9._:-]{2,64}$/i.test(v)) {
-      if (provider === 'openai' && /^(gpt-|chatgpt-|o\d)/i.test(v)) return v;
-      if (provider === 'gemini' && /gemini/i.test(v)) return v;
+
+  if (provider === 'custom') {
+    return /^[a-z0-9][a-z0-9._\-/:]{0,120}$/i.test(raw) ? raw : '';
+  }
+
+  if (raw) {
+    if (catalog.models.includes(raw)) return raw;
+    if (/^[a-z0-9][a-z0-9._:-]{2,64}$/i.test(raw)) {
+      if (provider === 'openai' && /^(gpt-|chatgpt-|o\d)/i.test(raw)) return raw;
+      if (provider === 'gemini' && /gemini/i.test(raw)) return raw;
     }
   }
   return catalog.defaultModel;
@@ -55,9 +71,20 @@ const geminiEndpointFor = (model, apiKey) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const DEFAULT_COMPATIBLE_BASE_URL = 'https://openrouter.ai/api/v1';
 
 function cleanKey(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+// Strip trailing slashes so `${base}/chat/completions` never doubles up.
+function normalizeBaseUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return raw ? raw.replace(/\/+$/, '') : '';
+}
+
+function compatibleEndpointFor(apiBaseUrl) {
+  return `${normalizeBaseUrl(apiBaseUrl)}/chat/completions`;
 }
 
 async function getSettings() {
@@ -66,16 +93,31 @@ async function getSettings() {
     'model',
     'geminiApiKey',
     'openaiApiKey',
-    'apiKey' // legacy single-key slot (always Gemini) — migrated on read
+    'apiKey', // legacy single-key slot (always Gemini) — migrated on read
+    'apiBaseUrl',
+    'customModel',
+    'customApiKey'
   ]);
   const provider = normalizeProvider(stored.provider);
   const legacyKey = cleanKey(stored.apiKey);
-  const apiKey =
-    provider === 'openai'
-      ? cleanKey(stored.openaiApiKey)
-      : cleanKey(stored.geminiApiKey) || legacyKey;
-  const model = normalizeModel(provider, stored.model);
-  return { provider, apiKey, model };
+
+  let apiKey = '';
+  let model;
+  let apiBaseUrl = '';
+
+  if (provider === 'openai') {
+    apiKey = cleanKey(stored.openaiApiKey);
+    model = normalizeModel('openai', stored.model);
+  } else if (provider === 'custom') {
+    apiKey = cleanKey(stored.customApiKey);
+    apiBaseUrl = normalizeBaseUrl(stored.apiBaseUrl) || DEFAULT_COMPATIBLE_BASE_URL;
+    model = normalizeModel('custom', stored.customModel);
+  } else {
+    apiKey = cleanKey(stored.geminiApiKey) || legacyKey;
+    model = normalizeModel('gemini', stored.model);
+  }
+
+  return { provider, apiKey, model, apiBaseUrl };
 }
 
 function extractText(data) {
@@ -261,10 +303,120 @@ async function callOpenAI({ apiKey, model, prompt, temperature, maxOutputTokens 
   return { ok: true, text, model };
 }
 
+// OpenAI-compatible endpoints: OpenRouter, Groq, Together AI, DeepSeek,
+// Ollama, LM Studio, vLLM, or any local server exposing /chat/completions.
+async function callOpenAICompatible({
+  apiBaseUrl,
+  apiKey,
+  model,
+  prompt,
+  temperature,
+  maxOutputTokens
+}) {
+  const base = normalizeBaseUrl(apiBaseUrl);
+  if (!base) {
+    return {
+      ok: false,
+      error: 'API_ERROR',
+      detail: 'No API Base URL configured. Set one in the extension options (e.g. https://openrouter.ai/api/v1).'
+    };
+  }
+  if (!model) {
+    return {
+      ok: false,
+      error: 'API_ERROR',
+      detail: 'No model name configured. Enter the model id used by your provider (e.g. deepseek/deepseek-r1).'
+    };
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  // Local servers such as Ollama usually need no auth — only send the
+  // Authorization header when a key is actually configured.
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const res = await fetch(compatibleEndpointFor(base), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an AI form-filling assistant. Follow the user instructions exactly, especially the STRICT OUTPUT RULES.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: typeof temperature === 'number' ? temperature : 0.7,
+      max_tokens: maxOutputTokens || 1024,
+      stream: false
+    })
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errJson = await res.json();
+      detail = errJson?.error?.message || JSON.stringify(errJson);
+    } catch {
+      try {
+        detail = await res.text();
+      } catch {
+        detail = '';
+      }
+    }
+    return {
+      ok: false,
+      error: 'API_ERROR',
+      detail: `${base} rejected the request (HTTP ${res.status}, model ${model}). ${detail}`.slice(0, 1500)
+    };
+  }
+
+  const data = await res.json();
+  let text = '';
+  try {
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === 'string') text = content.trim();
+  } catch {
+    text = '';
+  }
+
+  if (!text) {
+    const finishReason = data?.choices?.[0]?.finish_reason || '';
+    return {
+      ok: false,
+      error: 'EMPTY_RESPONSE',
+      detail: finishReason
+        ? `${model} returned no text (finish_reason: ${finishReason}).`
+        : `${model} returned no text. Check the model name and base URL.`
+    };
+  }
+
+  return { ok: true, text, model };
+}
+
 // Provider router — single entry point for all LLM calls.
-async function callLLM({ provider, apiKey, model, prompt, temperature, maxOutputTokens }) {
+async function callLLM({
+  provider,
+  apiKey,
+  model,
+  apiBaseUrl,
+  prompt,
+  temperature,
+  maxOutputTokens
+}) {
   if (provider === 'openai') {
     return callOpenAI({ apiKey, model, prompt, temperature, maxOutputTokens });
+  }
+  if (provider === 'custom') {
+    return callOpenAICompatible({
+      apiBaseUrl,
+      apiKey,
+      model,
+      prompt,
+      temperature,
+      maxOutputTokens
+    });
   }
   return callGemini({ apiKey, model, prompt, temperature, maxOutputTokens });
 }
@@ -383,9 +535,17 @@ function generateFullFormSuggestion(fields, pageMeta) {
 // ---------- Handlers ----------
 
 async function handleSingleFill(context, sendResponse) {
-  const { provider, apiKey, model } = await getSettings();
-  if (!apiKey) {
+  const { provider, apiKey, model, apiBaseUrl } = await getSettings();
+  if (!apiKey && provider !== 'custom') {
     sendResponse({ ok: false, error: 'NO_API_KEY' });
+    return;
+  }
+  if (provider === 'custom' && !apiBaseUrl) {
+    sendResponse({
+      ok: false,
+      error: 'API_ERROR',
+      detail: 'Set an API Base URL in the extension options first.'
+    });
     return;
   }
   try {
@@ -393,6 +553,7 @@ async function handleSingleFill(context, sendResponse) {
       provider,
       apiKey,
       model,
+      apiBaseUrl,
       prompt: buildSinglePrompt(context || {}),
       temperature: 0.85,
       maxOutputTokens: 512
@@ -412,9 +573,17 @@ async function handleSingleFill(context, sendResponse) {
 }
 
 async function handleBatchFill(payload, sendResponse) {
-  const { provider, apiKey, model } = await getSettings();
-  if (!apiKey) {
+  const { provider, apiKey, model, apiBaseUrl } = await getSettings();
+  if (!apiKey && provider !== 'custom') {
     sendResponse({ ok: false, error: 'NO_API_KEY' });
+    return;
+  }
+  if (provider === 'custom' && !apiBaseUrl) {
+    sendResponse({
+      ok: false,
+      error: 'API_ERROR',
+      detail: 'Set an API Base URL in the extension options first.'
+    });
     return;
   }
   const fields = Array.isArray(payload?.fields) ? payload.fields : [];
@@ -429,6 +598,7 @@ async function handleBatchFill(payload, sendResponse) {
       provider,
       apiKey,
       model,
+      apiBaseUrl,
       prompt: generateFullFormSuggestion(capped, payload?.page),
       temperature: 0.75,
       maxOutputTokens: 2048
@@ -478,7 +648,8 @@ async function handleBatchFill(payload, sendResponse) {
 }
 
 async function handleTest(request, sendResponse) {
-  const { provider: storedProvider, apiKey, model: storedModel } = await getSettings();
+  const { provider: storedProvider, apiKey, model: storedModel, apiBaseUrl: storedBase } =
+    await getSettings();
   const provider = normalizeProvider(request?.provider || storedProvider);
   const keyToTest =
     typeof request?.apiKey === 'string' && request.apiKey.trim()
@@ -486,15 +657,39 @@ async function handleTest(request, sendResponse) {
       : provider === storedProvider
         ? apiKey
         : '';
-  const modelToTest =
-    request?.model && request.model.trim()
-      ? normalizeModel(provider, request.model)
+
+  // Custom provider: base URL + free-text model come from their own fields.
+  let modelToTest;
+  let baseUrlToTest = '';
+  if (provider === 'custom') {
+    const requestedBase = request?.apiBaseUrl ? normalizeBaseUrl(request.apiBaseUrl) : '';
+    baseUrlToTest = requestedBase || (provider === storedProvider ? storedBase : '');
+    const requestedModel = request?.customModel ? String(request.customModel).trim() : '';
+    modelToTest = requestedModel
+      ? normalizeModel('custom', requestedModel)
       : provider === storedProvider
         ? storedModel
-        : normalizeModel(provider, '');
+        : '';
+  } else {
+    modelToTest =
+      request?.model && request.model.trim()
+        ? normalizeModel(provider, request.model)
+        : provider === storedProvider
+          ? storedModel
+          : normalizeModel(provider, '');
+  }
 
-  if (!keyToTest) {
+  // Local servers (Ollama, LM Studio) often need no API key.
+  if (!keyToTest && provider !== 'custom') {
     sendResponse({ ok: false, error: 'NO_API_KEY', detail: 'Paste an API key first.' });
+    return;
+  }
+  if (provider === 'custom' && !baseUrlToTest) {
+    sendResponse({
+      ok: false,
+      error: 'API_ERROR',
+      detail: 'Enter an API Base URL (e.g. https://openrouter.ai/api/v1) and click Save.'
+    });
     return;
   }
   try {
@@ -502,9 +697,10 @@ async function handleTest(request, sendResponse) {
       provider,
       apiKey: keyToTest,
       model: modelToTest,
+      apiBaseUrl: baseUrlToTest,
       prompt: 'Reply with the single word: ok',
       temperature: 0,
-      maxOutputTokens: 8
+      maxOutputTokens: 16
     });
     if (!result.ok) {
       sendResponse(result);
@@ -543,7 +739,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     changes &&
     (Object.hasOwn(changes, 'apiKey') ||
       Object.hasOwn(changes, 'geminiApiKey') ||
-      Object.hasOwn(changes, 'openaiApiKey'))
+      Object.hasOwn(changes, 'openaiApiKey') ||
+      Object.hasOwn(changes, 'customApiKey'))
   ) {
     refreshActionIcon();
   }
@@ -580,7 +777,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'AIFF_TEST') {
     handleTest(
-      { provider: message.provider, apiKey: message.apiKey, model: message.model },
+      {
+        provider: message.provider,
+        apiKey: message.apiKey,
+        model: message.model,
+        apiBaseUrl: message.apiBaseUrl,
+        customModel: message.customModel
+      },
       sendResponse
     );
     return true;

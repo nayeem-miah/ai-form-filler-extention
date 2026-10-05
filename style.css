@@ -193,6 +193,32 @@ html[data-theme="dark"] {
   margin-top: 0;
 }
 
+/* Hint text under fields */
+.aiff-hint {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--aiff-muted);
+  word-break: break-word;
+}
+
+.aiff-hint code {
+  background: var(--aiff-chip-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--aiff-muted);
+}
+
+/* Custom-provider fields block (shown only for that provider) */
+#customSection {
+  margin-bottom: 4px;
+}
+
+#customSection[hidden] {
+  display: none;
+}
+
 /* Input with icon button inside (right side) */
 .aiff-input-wrap {
   position: relative;
