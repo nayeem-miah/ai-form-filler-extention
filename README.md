@@ -4,300 +4,105 @@
 
 [**Download the latest release (v1.5.0)**](https://github.com/nayeem-miah/ai-form-filler-extention/releases/tag/v1.5.0)
 
-A Manifest V3 Chrome extension that fills web forms with AI-generated content.
-Bring your own API key (Gemini, OpenAI, or any OpenAI-compatible endpoint) and the
-extension writes sensible values into text inputs, textareas, standard `<select>`
-dropdowns, and modern React/Tailwind custom dropdowns.
+A Chrome extension that fills web forms using AI. Bring your own API key and it writes
+realistic values into text inputs, textareas, standard dropdowns, and modern
+React/Tailwind custom dropdowns.
 
-## Features
+## Install
 
-**Two fill modes**
+1. Download the release `.zip` from the link above and unzip it anywhere on your
+   computer.
+2. Open Chrome and go to `chrome://extensions`.
+3. Turn on **Developer mode** (top-right toggle).
+4. Click **Load unpacked** and select the unzipped folder, the one containing
+   `manifest.json`.
+5. Pin the extension: click the puzzle-piece icon in the toolbar, then pin
+   _AI Form Filler Assistant_.
 
-| Button | When it appears | What it does |
-| --- | --- | --- |
-| AI Fill | Hover over or focus any text field | Fills just that one field |
-| Fill All Fields | Always pinned bottom-right (drag to move) | Batch-fills every visible field on the page |
+## Setup
 
-**Multi-provider**
-
-- **Google Gemini** - 13 models. Default: `gemini-3.5-flash-lite`. Also includes
-  `gemini-2.5-flash`, the Gemini 3.x Flash family (`gemini-3.8-flash` down to
-  `gemini-3-flash`), Flash-Lite variants, `gemini-2.5-pro`, `gemini-3.1-pro-preview`
-  and the `gemini-1.5-*` legacy entries.
-- **OpenAI (Official)** - `gpt-4o-mini` (default), `gpt-4o`, `gpt-3.5-turbo`.
-- **OpenAI Compatible / Custom API** - OpenRouter, Groq, Together AI, DeepSeek,
-  Ollama, LM Studio, vLLM, or any server exposing `POST {base}/chat/completions`.
-
-**Dropdown intelligence**
-
-- Reads the full `<option>` list from native `<select>` elements.
-- Detects custom comboboxes via `role="combobox"`, `aria-haspopup="listbox"`, and
-  `select`/`dropdown` class names, including portals and virtualized popups.
-- Opens closed dropdowns at collect time so the model sees the real option list.
-- Only ever selects values that already exist in the list. Placeholders, disabled
-  items, and "Add new..." action rows are excluded. If the model asks for something
-  absent, the closest existing option is used and reported back to you.
-- Filters through popup search boxes for server-filtered lists like "Search clients...".
-
-**Framework compatibility**
-
-Every write dispatches synthetic `input` and `change` events (plus `click` for custom
-dropdowns), using the native value setter, so React, Vue, and Angular all detect the
-change. Contenteditable and rich-text editors are supported too.
-
-**Other details**
-
-- All API calls run in the service worker, never from page scripts.
-- **Randomize values** toggle: a fresh persona anchor per run, so repeated runs return
-  different data (see [Privacy and data storage](#privacy-and-data-storage)).
-- Draggable Fill All Fields button: grab it anywhere; the position is remembered per
-  device.
-- Styled toast notifications instead of blocking browser dialogs.
-- Dark and light theme, minimal settings UI.
-- **In-app update checker** compares your installed version against the latest GitHub
-  release.
-
-## Installation
-
-### From GitHub Releases
-
-1. Open the repository's **Releases** page.
-2. Download the latest release's `.zip` (source code archives work too).
-3. Unzip it anywhere on your computer.
-4. Open Chrome and go to `chrome://extensions`.
-5. Enable **Developer mode** (top-right toggle).
-6. Click **Load unpacked** and select the unzipped folder (the one containing
-   `manifest.json`).
-7. Pin the extension: click the puzzle-piece icon in the toolbar and pin
-   *AI Form Filler Assistant*.
-
-### Configure your API key
-
-1. Click the extension icon in the toolbar (this opens the settings page directly).
-2. Choose a **Provider**.
-3. Paste your key, pick a **Model**, and click **Save & Test**. This saves your
-   settings and verifies the connection in one step.
+1. Click the extension icon in the toolbar. The settings page opens directly.
+2. Choose a **Provider** (see below).
+3. Paste your API key, pick a **Model**, and click **Save & Test**. This saves your
+   settings and checks the connection in one step.
 4. A green confirmation means you are ready to fill forms.
 
-Get a key:
+Where to get a key:
 
-| Provider | Where |
+| Provider   | Where                                    |
+| ---------- | ---------------------------------------- |
+| Gemini     | <https://aistudio.google.com/app/apikey> |
+| OpenAI     | <https://platform.openai.com/api-keys>   |
+| OpenRouter | <https://openrouter.ai/keys>             |
+| Groq       | <https://console.groq.com/keys>          |
+| DeepSeek   | <https://platform.deepseek.com/api_keys> |
+
+> Your key is only ever sent to the provider you selected. It is never exposed to
+> website scripts and never logged.
+
+## How to use
+
+- **Fill one field**: hover over or focus any text field, then click **AI Fill**.
+- **Fill the whole form**: click **Fill All Fields**. Every visible field is filled in
+  one request.
+- **Randomize values** is on by default, so each run returns different data. Turn it
+  off for predictable values.
+
+Password, file, hidden, checkbox, radio, and disabled fields are skipped.
+
+## Providers and models
+
+**Google Gemini** (13 models, default `gemini-3.5-flash-lite`)
+
+| Model | Notes |
 | --- | --- |
-| Gemini | <https://aistudio.google.com/app/apikey> |
-| OpenAI | <https://platform.openai.com/api-keys> |
-| OpenRouter | <https://openrouter.ai/keys> |
-| Groq | <https://console.groq.com/keys> |
-| DeepSeek | <https://platform.deepseek.com/api_keys> |
+| `gemini-2.5-flash` | Fast, widely available |
+| `gemini-3.8-flash` | Newest in the 3.x Flash family |
+| `gemini-3.7-flash` | |
+| `gemini-3.6-flash` | |
+| `gemini-3.5-flash` | |
+| `gemini-3.5-flash-lite` | Default. Cheapest and fastest |
+| `gemini-3-flash` | |
+| `gemini-3.1-flash-lite` | |
+| `gemini-2.5-flash-lite` | |
+| `gemini-2.5-pro` | Highest quality, slower |
+| `gemini-3.1-pro-preview` | Preview build |
+| `gemini-1.5-flash` | Legacy |
+| `gemini-1.5-pro` | Legacy |
 
-> **Your key is never sent anywhere except the provider you selected.** It is read
-> only by the extension's service worker, which sends it to that provider's API to
-> make your request. It is never exposed to page scripts and never logged.
-> Do not paste keys into chat, issues, or commits.
+**OpenAI (official)** (3 models, default `gpt-4o-mini`)
 
-## Privacy and data storage
+`gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`
 
-This section is deliberately precise, because the difference matters.
+**OpenAI compatible / custom API**
 
-**Where your key is stored**
+Works with any server exposing `POST {base}/chat/completions`, including OpenRouter,
+Groq, Together AI, DeepSeek, Ollama, LM Studio, and vLLM. You type the model id
+yourself, so any model that provider offers will work.
 
-Keys are saved with `chrome.storage.sync`. Two consequences matter:
-
-1. **They are not end-to-end encrypted.** Chrome syncs this data to the Google
-   account attached to your browser profile. Anyone who can access that profile,
-   including on any device you are signed into, can read the stored value.
-2. **`sync` means "across your devices", not "local only".** Sign into the same
-   Google account on another machine and your settings come with you (after you
-   load the extension there, since unpacked extensions themselves are not synced).
-
-What is **not** synced: the Fill All Fields button position (kept in
-`chrome.storage.local`) and the in-memory list of recently used values behind
-Randomize, which never leaves the tab and is discarded on reload.
-
-**If you prefer keys on a single machine**, they can be moved to
-`chrome.storage.local` so they never sync. The trade-off is re-entering them on each
-new device.
-
-**What goes where**
-
-| Data | Sent to |
-| --- | --- |
-| Your API key | The provider you selected, from the service worker |
-| Field labels, placeholders, surrounding form text, page title and URL | The same provider, inside the prompt, so it can generate realistic values |
-
-There is no analytics or telemetry. Declared host permissions are limited to the
-provider APIs and `api.github.com` for the update check. Custom API hosts are
-requested on demand, only when you enter one.
-
-**Feedback**
-
-The settings page has a **Support** dialog with a single *Report via GitHub Issues*
-button. It opens GitHub's new-issue page in a new tab and posts under your own
-account. Nothing is sent to any third-party form-relay or email service, and the
-extension stores no feedback credentials of any kind.
-
-## Using the OpenAI-compatible option
-
-Pick **OpenAI Compatible / Custom API**, then set:
+Set these two fields:
 
 - **API Base URL**: the `v1`-style base, without `/chat/completions`.
-  Examples:
-  - `https://openrouter.ai/api/v1` (OpenRouter)
-  - `https://api.groq.com/openai/v1` (Groq)
-  - `https://api.deepseek.com/v1` (DeepSeek)
-  - `http://localhost:11434/v1` (Ollama)
+  Examples: `https://openrouter.ai/api/v1` (OpenRouter),
+  `https://api.groq.com/openai/v1` (Groq), `https://api.deepseek.com/v1` (DeepSeek),
+  `http://localhost:11434/v1` (Ollama).
 - **Model Name**: your provider's model id, for example `deepseek/deepseek-chat`,
-  `llama-3.3-70b-versatile`, `mistral-7b-instruct`, `llama3.1:8b`.
+  `llama-3.3-70b-versatile`, or `mistral-7b-instruct`.
 
-The extension requests `{base}/chat/completions`. Leave the API key blank for local
-servers like Ollama; no `Authorization` header is sent when the field is empty.
-On the first save, Chrome asks you to allow access to that host.
+Leave the API key blank for local servers like Ollama. Chrome asks for permission to
+the host the first time you save.
 
-## Usage
+## Notes
 
-**Fill one field**: hover over or focus any text field; the AI Fill button appears next
-to it. Click to generate content from the field's label, placeholder, ARIA text,
-surrounding form text, and page context.
+- Keys are saved with `chrome.storage.sync`, which means they sync with your Google
+  account across devices and are not end-to-end encrypted.
+- There is no analytics or telemetry.
+- Extensions cannot run on `chrome://` pages, the Chrome Web Store, or PDFs.
 
-**Fill the whole form**: click Fill All Fields. All visible text inputs, textareas, and
-dropdowns are collected, sent as one batch request, and filled. The summary tells you
-how many fields were filled and flags any dropdown that needed a substitute value.
+## Author
 
-The Fill All Fields button is draggable: grab it anywhere and drop it in a convenient
-corner. Its position is remembered per device.
-
-**Fields that are skipped**: `password`, `file`, `hidden`, `checkbox`, `radio`,
-`submit`, `button`, `reset`, `image`, `range`, `color`, plus disabled and read-only
-inputs.
-
-## Options
-
-The settings page is intentionally small. Everything it contains:
-
-| Control | What it does |
-| --- | --- |
-| Theme toggle | Light or dark. Saved, and initialised from your OS preference |
-| **Provider** | Gemini, OpenAI, or a custom OpenAI-compatible endpoint |
-| **Base URL** and **Model** | Shown only for the custom provider |
-| **API Key** | Per provider, so switching providers does not lose your other keys |
-| Eye icon | Shows or hides the key while typing |
-| **Save & Test** | Saves everything, then verifies the connection in one click |
-| **Remove** | Clears the key for the active provider only |
-| **Randomize values** | See below |
-| **Check updates** | Compares your version against the latest GitHub release |
-
-### Randomize values
-
-**On (default)**: each run gets a random but internally consistent anchor (a person,
-a company, an industry, a city, a project), and the previous run's values are sent as
-a "do not repeat these" list. Every run therefore returns different names, numbers,
-and text, which is what you usually want when testing a form or seeding demo data.
-
-**Off**: no anchor is injected and the output temperature is lower, so the model falls
-back to its most typical answer. Use this when you want predictable values, or when
-filling a real form where you do not want existing entries overwritten.
-
-Dropdowns are unaffected either way: their value must come from the fixed option list,
-so they stay the same by design.
-
-## Updating
-
-1. Download the new release and unzip it (or replace the files in your existing
-   folder).
-2. Go to `chrome://extensions`.
-3. Find *AI Form Filler Assistant* and click the **Reload** button.
-
-Or use the built-in checker: **Options -> Updates -> Check for Updates**. It reports
-either `Up to date (vX.Y.Z)` or `New Version Available!` with a download link.
-
-> After reloading the extension, refresh any already-open tabs (Ctrl+R). Chrome
-> disconnects old tabs from an updated extension; the extension tells you if this
-> happens. Your saved keys and settings are preserved.
-
-## Project structure
-
-```
-ai-form-filler/
-|-- manifest.json      # MV3 manifest
-|-- background.js      # Service worker: provider router, Gemini/OpenAI/compatible calls,
-|                      #   GitHub update check, dynamic toolbar icon
-|-- content.js         # DOM layer: floating buttons, context extraction,
-|                      #   dropdown handling, framework-safe value insertion
-|-- options.html       # Settings UI
-|-- options.js         # Settings logic: provider/model/key state, update checker
-|-- style.css          # Options design system (light + dark themes)
-|-- icons/             # active/idle PNG sets (16/48/128)
-`-- README.md
-```
-
-### Architecture notes
-
-- **All network calls live in `background.js`** (service worker) to avoid CORS issues
-  and to keep API keys out of page context. The UI never calls a provider directly; it
-  sends messages (`AIFF_FILL`, `AIFF_FILL_ALL`, `AIFF_TEST`, `AIFF_CHECK_UPDATE`) and
-  receives plain results.
-- **Content-script UI is isolated in a Shadow DOM host** (`#ai-form-filler-root`) with
-  the highest practical z-index, so host-page CSS cannot break it and it cannot
-  pollute the page.
-- **Model catalogs live in two places** (`PROVIDERS` in `background.js` and
-  `options.js`). Keep them in sync; `background.js` additionally accepts
-  pattern-valid future model ids (for example any `gemini-*`, `gpt-*`, `o*`).
-
-### Permissions
-
-| Permission | Why |
-| --- | --- |
-| `storage` | Save API keys, model, theme, button position |
-| `activeTab` | Minimal page access for the current tab |
-| `scripting` | Inject/manage the content script UI |
-| `generativelanguage.googleapis.com` | Gemini API |
-| `api.openai.com` | OpenAI API |
-| `api.github.com` | Release/version check |
-| optional host permissions | Requested on demand for custom API base URLs |
-
-## Troubleshooting
-
-**"Extension context invalidated"**: the extension was reloaded or updated while this
-tab was open. Refresh the tab and try again.
-
-**A dropdown is skipped**: the model requested a value that is not in the list and the
-dropdown had no usable options to substitute. Open DevTools, go to the Console, and
-look for `[AIFF]` logs, which report the available options and the requested value.
-
-**Test fails with 401/403**: the key is invalid, revoked, or belongs to a different
-provider than the one selected.
-
-**Nothing happens on a site**: internal pages (`chrome://`), the Chrome Web Store, and
-PDFs do not allow extensions to run.
-
-## Development
-
-After editing any file:
-
-1. Go to `chrome://extensions` and click **Reload** on the extension.
-2. Refresh any open tabs.
-
-Useful checks:
-
-```bash
-node --check background.js
-node --check content.js
-node --check options.js
-```
-
-## Author and contact
-
-**MD Nayeem Miah**
-
-- Portfolio: <https://nayeem-miah.me/>
-- Email: <nayeem5113a@gmail.com>
-- Issues: <https://github.com/nayeem-miah/ai-form-filler-extention/issues>
-
-Found a bug on a specific site, or a provider that needs better handling? Open an
-issue. Site-specific DOM details (the element markup, or `[AIFF]` logs from the
-DevTools console) make it far faster to fix.
+**MD Nayeem Miah** - <nayeem5113a@gmail.com> - <https://nayeem-miah.me/>
 
 ## License
 
 MIT
-
-Made for developers who are tired of typing test data by hand.
