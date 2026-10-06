@@ -859,6 +859,18 @@ async function handleCheckUpdate(sendResponse) {
   }
 }
 
+// ---------- Toolbar icon click -> open settings ----------
+
+// No default_popup is declared, so this listener receives the click and we
+// send the user straight to the Options page.
+if (chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener(() => {
+    chrome.runtime.openOptionsPage().catch(() => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+    });
+  });
+}
+
 // ---------- Dynamic toolbar icon (active/idle based on API key) ----------
 
 const ICON_SETS = {
