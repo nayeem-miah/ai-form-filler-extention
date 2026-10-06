@@ -390,11 +390,9 @@ function openOptionsPage() {
   }
 }
 
-// Clean SVG glyphs (no emoji) for the floating buttons.
+// Status-only SVG glyphs for the floating buttons. The idle labels are plain
+  // text with no icon; these appear only while busy, on success, and on failure.
   const ICONS = {
-    sparkle:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z"/></svg>',
-    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11l-1 8.5 9-12H12.5L13 2z"/></svg>',
     spinner:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>',
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
@@ -402,29 +400,44 @@ function openOptionsPage() {
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
   };
 
-  /** Build button internals: an icon span plus a text span. */
+  /** Build button internals: an optional icon span plus a text span. */
   function buildButtonContent(btn, iconSvg, label) {
     btn.textContent = '';
-    const icon = document.createElement('span');
-    icon.className = 'aiff-btn-icon';
-    icon.innerHTML = iconSvg;
+    // Idle state has no icon; busy/success/error states do.
+    if (iconSvg) {
+      const icon = document.createElement('span');
+      icon.className = 'aiff-btn-icon';
+      icon.innerHTML = iconSvg;
+      btn.appendChild(icon);
+    }
     const text = document.createElement('span');
     text.className = 'aiff-btn-text';
     text.textContent = label;
-    btn.appendChild(icon);
     btn.appendChild(text);
   }
 
   /** Update icon + label without rebuilding the button. */
   function setButtonFace(btn, iconSvg, label) {
     if (!btn) return;
-    let icon = btn.querySelector('.aiff-btn-icon');
-    let text = btn.querySelector('.aiff-btn-text');
-    if (!icon || !text) {
+    const text = btn.querySelector('.aiff-btn-text');
+    if (!text) {
       buildButtonContent(btn, iconSvg, label);
       return;
     }
-    if (iconSvg) icon.innerHTML = iconSvg;
+    const icon = btn.querySelector('.aiff-btn-icon');
+    // Icons come and go between states, so add or remove the span as needed.
+    if (iconSvg) {
+      if (icon) {
+        icon.innerHTML = iconSvg;
+      } else {
+        const fresh = document.createElement('span');
+        fresh.className = 'aiff-btn-icon';
+        fresh.innerHTML = iconSvg;
+        btn.insertBefore(fresh, text);
+      }
+    } else if (icon) {
+      icon.remove();
+    }
     if (label != null) text.textContent = label;
   }
 
@@ -455,7 +468,7 @@ function openOptionsPage() {
       singleBtn.type = 'button';
       singleBtn.className = 'aiff-btn aiff-single';
       singleBtn.setAttribute('data-aiff-single', 'true');
-      buildButtonContent(singleBtn, ICONS.sparkle, 'AI Fill');
+      buildButtonContent(singleBtn, null, 'AI Fill');
       singleBtn.addEventListener('mousedown', (e) => e.preventDefault());
       singleBtn.addEventListener('click', onSingleFillClick);
       trackPointerOnButton(singleBtn);
@@ -469,7 +482,7 @@ function openOptionsPage() {
       fillAllBtn.type = 'button';
       fillAllBtn.className = 'aiff-btn aiff-fill-all';
       fillAllBtn.setAttribute('data-aiff-fill-all', 'true');
-      buildButtonContent(fillAllBtn, ICONS.bolt, 'Fill All Fields');
+      buildButtonContent(fillAllBtn, null, 'Fill All Fields');
       fillAllBtn.title = 'Drag to move';
       fillAllBtn.addEventListener('mousedown', (e) => e.preventDefault());
       fillAllBtn.addEventListener('click', onFillAllClickCapture, true);
@@ -1153,7 +1166,7 @@ function openOptionsPage() {
       setButtonFace(singleBtn, ICONS.check, text || 'Filled!');
     } else {
       isSingleLoading = false;
-      setButtonFace(singleBtn, ICONS.sparkle, text || 'AI Fill');
+      setButtonFace(singleBtn, null, text || 'AI Fill');
     }
   }
 
@@ -1175,7 +1188,7 @@ function openOptionsPage() {
       setButtonFace(fillAllBtn, ICONS.check, text || 'All filled!');
     } else {
       isBatchLoading = false;
-      setButtonFace(fillAllBtn, ICONS.bolt, text || 'Fill All Fields');
+      setButtonFace(fillAllBtn, null, text || 'Fill All Fields');
     }
   }
 
