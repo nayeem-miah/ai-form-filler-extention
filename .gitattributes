@@ -1,0 +1,15 @@
+# Normalize line endings in the repo.
+* text=auto eol=lf
+
+# Source files must stay UTF-8. Without this, tools that read them as
+# Windows-1252 turn every em dash, ellipsis and emoji into mojibake
+# (e.g. "--" instead of the em dash), which then gets committed.
+*.js   text working-tree-encoding=UTF-8
+*.json text working-tree-encoding=UTF-8
+*.html text working-tree-encoding=UTF-8
+*.css  text working-tree-encoding=UTF-8
+*.md   text working-tree-encoding=UTF-8
+*.svg  text working-tree-encoding=UTF-8
+
+# Never touch binary icons.
+*.png binary

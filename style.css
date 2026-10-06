@@ -1,10 +1,10 @@
-﻿/* style.css
+/* style.css
  * Serves two roles:
- *  1. Content-script scoping layer â€” the floating buttons live in Shadow DOM
+ *  1. Content-script scoping layer — the floating buttons live in Shadow DOM
  *     (see content.js), so this file only pins the host container and provides
  *     light-DOM fallback classes.
- *  2. Options page design system â€” minimalist Vercel/Linear-inspired card
- *     (compact 400â€“440px, subtle borders, 12â€“16px radii, soft shadow),
+ *  2. Options page design system — minimalist Vercel/Linear-inspired card
+ *     (compact 400–440px, subtle borders, 12–16px radii, soft shadow),
  *     with light + dark themes via [data-theme] on <html>.
  */
 
@@ -505,33 +505,27 @@ body.aiff-modal-open {
   color: var(--aiff-muted);
 }
 
-.aiff-btn-link {
+/* The single primary action in the support modal.
+   This is the only .aiff-btn-solid in the page and sets its own display,
+   so it does not depend on source order against any shared button class. */
+.aiff-btn-solid {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-decoration: none;
-  color: var(--text-main);
-}
-
-/* The single primary action in the support modal.
-   Declared after .aiff-btn-link on purpose: both selectors are one class
-   deep, so source order decides, and this must win the color to keep the
-   label legible on the filled background. */
-.aiff-btn-solid {
   gap: 8px;
-  flex: none;
   width: 100%;
+  box-sizing: border-box;
   padding: 11px 16px;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  /* Reset any inherited color first, then set the legible on-primary color.
-     Using !important because .aiff-btn-link also sets color at equal
-     specificity, and losing this race renders an invisible label. */
-  color: var(--aiff-on-primary) !important;
+  color: var(--aiff-on-primary);
   background: var(--primary);
   border: 1px solid var(--primary);
   border-radius: 9px;
   text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
 }
 
 .aiff-btn-solid svg {

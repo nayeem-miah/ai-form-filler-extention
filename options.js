@@ -1,4 +1,4 @@
-﻿// options.js â€” settings UI logic (CSP compliant: no inline handlers).
+// options.js — settings UI logic (CSP compliant: no inline handlers).
 // Provider (Gemini / OpenAI) + model + per-provider API keys are persisted
 // via chrome.storage.sync. Theme via chrome.storage.sync too (falls back to
 // OS prefers-color-scheme). Connection tests are routed through
@@ -63,7 +63,7 @@ const DEFAULT_PROVIDER = 'gemini';
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_THEME = 'light';
 
-// Static SVG icon strings (no emojis in the UI; CSP-safe â€” no code execution).
+// Static SVG icon strings (no emojis in the UI; CSP-safe — no code execution).
 const ICON_EYE =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_EYE_OFF =
@@ -438,14 +438,14 @@ function requestHostPermission(url, onResult) {
       });
       if (response && response.ok) {
         setStatus(
-          `Saved and connected â€” ${catalog.label} is working with ${response.model || model}.`,
+          `Saved and connected — ${catalog.label} is working with ${response.model || model}.`,
           'success'
         );
       } else if (response && response.error === 'NO_API_KEY') {
         setStatus('Saved, but no API key was available to test with.', 'error');
       } else {
         setStatus(
-          `Saved, but the connection test failed â€” ${String((response && response.detail) || 'unknown error').slice(0, 300)}`,
+          `Saved, but the connection test failed — ${String((response && response.detail) || 'unknown error').slice(0, 300)}`,
           'error'
         );
       }
@@ -453,11 +453,11 @@ function requestHostPermission(url, onResult) {
       const msg = String((err && err.message) || err || '');
       if (/extension context invalidated|context invalidated/i.test(msg)) {
         setStatus(
-          'Settings saved. The extension was reloaded â€” reopen this page to finish testing.',
+          'Settings saved. The extension was reloaded — reopen this page to finish testing.',
           'info'
         );
       } else {
-        setStatus(`Settings saved, but the test errored â€” ${msg.slice(0, 200)}`, 'error');
+        setStatus(`Settings saved, but the test errored — ${msg.slice(0, 200)}`, 'error');
       }
     } finally {
       setBusy(false);
@@ -471,7 +471,7 @@ function requestHostPermission(url, onResult) {
 
     const { key, model, isCustom, catalog } = form;
     providerKeys[currentProvider] = key;
-    setBusy(true, 'Savingâ€¦');
+    setBusy(true, 'Saving…');
 
     const persist = () => {
       const payload = {
@@ -492,15 +492,15 @@ function requestHostPermission(url, onResult) {
           return;
         }
         setFavicon(true);
-        // Saved successfully â€” now verify the connection in the same click.
-        setBusy(true, 'Testingâ€¦');
-        setStatus(`Saved. Testing ${catalog.label} ${model}â€¦`, 'info');
+        // Saved successfully — now verify the connection in the same click.
+        setBusy(true, 'Testing…');
+        setStatus(`Saved. Testing ${catalog.label} ${model}…`, 'info');
         runConnectionTest(form);
       });
     };
 
     if (isCustom) {
-      // Custom endpoints need a host permission â€” ask inside this click.
+      // Custom endpoints need a host permission — ask inside this click.
       hasHostPermission(form.baseUrl).then((has) => {
         if (has) {
           persist();
@@ -513,7 +513,7 @@ function requestHostPermission(url, onResult) {
           }
           setBusy(false);
           setStatus(
-            `Cannot reach ${originPatternFor(form.baseUrl) || form.baseUrl} â€” ${errMessage || 'permission denied'}`,
+            `Cannot reach ${originPatternFor(form.baseUrl) || form.baseUrl} — ${errMessage || 'permission denied'}`,
             'error'
           );
         });
@@ -525,7 +525,7 @@ function requestHostPermission(url, onResult) {
 
   // ---- Remove current provider key (keeps model + theme + other keys) ----
   clearBtn.addEventListener('click', () => {
-    setBusy(true, 'Removingâ€¦');
+    setBusy(true, 'Removing…');
     providerKeys[currentProvider] = '';
     apiKeyInput.value = '';
     const payload = {
@@ -644,8 +644,8 @@ function requestHostPermission(url, onResult) {
 
   updateBtn.addEventListener('click', async () => {
     updateBtn.disabled = true;
-    updateBtn.textContent = 'Checkingâ€¦';
-    setUpdateStatus('pending', 'Checking GitHub for the latest releaseâ€¦');
+    updateBtn.textContent = 'Checking…';
+    setUpdateStatus('pending', 'Checking GitHub for the latest release…');
 
     try {
       const response = await chrome.runtime.sendMessage({ type: 'AIFF_CHECK_UPDATE' });
@@ -659,14 +659,14 @@ function requestHostPermission(url, onResult) {
         if (remote && compareVersions(remote, local) > 0) {
           setUpdateStatus(
             'available',
-            `ðŸš€ New Version Available! (installed v${installed})`,
+            `🚀 New Version Available! (installed v${installed})`,
             `Download v${remoteLabel}`,
             response.releaseUrl
           );
         } else {
           setUpdateStatus(
             'current',
-            `âœ… Up to date (v${installed})`,
+            `✅ Up to date (v${installed})`,
             '',
             ''
           );
@@ -674,22 +674,22 @@ function requestHostPermission(url, onResult) {
       } else if (response && response.error === 'NO_RELEASE') {
         setUpdateStatus(
           'neutral',
-          `â„¹ï¸ No published releases yet â€” you're on the latest (v${installed}).`,
+          `ℹ️ No published releases yet — you're on the latest (v${installed}).`,
           'View repository',
           'https://github.com/nayeem-miah/ai-form-filler-extention'
         );
       } else if (response && response.error === 'RATE_LIMITED') {
-        setUpdateStatus('error', 'âš ï¸ GitHub rate limit reached. Try again shortly.', '', '');
+        setUpdateStatus('error', '⚠️ GitHub rate limit reached. Try again shortly.', '', '');
       } else {
         const detail = response && response.detail ? ` ${response.detail}` : '';
-        setUpdateStatus('error', `âš ï¸ Could not check for updates.${detail}`.slice(0, 300), '', '');
+        setUpdateStatus('error', `⚠️ Could not check for updates.${detail}`.slice(0, 300), '', '');
       }
     } catch (err) {
       const msg = String((err && err.message) || err || '');
       if (/extension context invalidated|context invalidated/i.test(msg)) {
-        setUpdateStatus('error', 'âš ï¸ Extension reloaded â€” reopen this page to check again.', '', '');
+        setUpdateStatus('error', '⚠️ Extension reloaded — reopen this page to check again.', '', '');
       } else {
-        setUpdateStatus('error', `âš ï¸ Update check failed: ${msg}`.slice(0, 300), '', '');
+        setUpdateStatus('error', `⚠️ Update check failed: ${msg}`.slice(0, 300), '', '');
       }
     } finally {
       updateBtn.disabled = false;
