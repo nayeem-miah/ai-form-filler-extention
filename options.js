@@ -133,6 +133,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const feedbackMessage = document.getElementById('feedbackMessage');
   const feedbackStatus = document.getElementById('feedbackStatus');
   const feedbackLinks = document.getElementById('feedbackLinks');
+  const supportLink = document.getElementById('supportLink');
+  const supportModal = document.getElementById('supportModal');
+  const supportModalClose = document.getElementById('supportModalClose');
   const githubIssueLink = document.getElementById('githubIssueLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -723,6 +726,49 @@ function requestHostPermission(url, onResult) {
       updateBtn.disabled = false;
       updateBtn.textContent = 'Check for Updates';
     }
+  });
+
+  // ---- Support modal (open / close) ----
+
+  let lastFocusedBeforeModal = null;
+
+  function openSupportModal() {
+    if (!supportModal) return;
+    lastFocusedBeforeModal = document.activeElement;
+    supportModal.hidden = false;
+    document.body.classList.add('aiff-modal-open');
+    try {
+      feedbackEmail.focus();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function closeSupportModal() {
+    if (!supportModal) return;
+    supportModal.hidden = true;
+    document.body.classList.remove('aiff-modal-open');
+    if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+      try {
+        lastFocusedBeforeModal.focus();
+      } catch {
+        /* ignore */
+      }
+    }
+    lastFocusedBeforeModal = null;
+  }
+
+  supportLink.addEventListener('click', openSupportModal);
+  supportModalClose.addEventListener('click', closeSupportModal);
+
+  // Clicking the backdrop (but not the modal panel itself) closes it.
+  supportModal.addEventListener('mousedown', (e) => {
+    if (e.target === supportModal) closeSupportModal();
+  });
+
+  // Escape closes too.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && supportModal && !supportModal.hidden) closeSupportModal();
   });
 
   // ---- Feedback page shortcuts (keyword -> clickable chip) ----

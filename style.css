@@ -345,20 +345,154 @@ html[data-theme="dark"] {
   transform: translateX(16px);
 }
 
-/* ---------- Feedback ---------- */
-.aiff-divider {
-  border: none;
-  border-top: 1px solid var(--border-color);
-  margin: 20px 0 16px;
+/* ---------- Support modal ---------- */
+.aiff-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 20, 30, 0.45);
+  backdrop-filter: blur(3px);
+  animation: aiff-fade-in 0.15s ease;
 }
 
-.aiff-section-title {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+.aiff-modal-backdrop[hidden] {
+  display: none !important;
+}
+
+@keyframes aiff-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes aiff-modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.aiff-modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(10, 14, 25, 0.28);
+  animation: aiff-modal-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+.aiff-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.aiff-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+}
+
+.aiff-modal-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--aiff-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.aiff-modal-close:hover {
+  color: var(--text-main);
+  background: var(--aiff-hover-bg);
+}
+
+.aiff-modal-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--aiff-focus-ring);
+}
+
+.aiff-modal-body {
+  padding: 6px 18px 18px;
+}
+
+.aiff-modal-author {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.aiff-author-links {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--aiff-muted);
+}
+
+.aiff-author-links a {
+  color: var(--aiff-muted);
+  text-decoration: none;
+}
+
+.aiff-author-links a:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+}
+
+.aiff-modal .aiff-credit {
+  margin: 0;
+}
+
+.aiff-btn-block {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Prevent background scroll while the modal is open */
+body.aiff-modal-open {
+  overflow: hidden;
+}
+
+/* ---------- Footer button link ---------- */
+.aiff-footer-btn {
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--aiff-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.aiff-footer-btn:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+}
+
+.aiff-footer-btn:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--aiff-focus-ring);
 }
 
 .aiff-optional {

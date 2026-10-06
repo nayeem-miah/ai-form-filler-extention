@@ -102,59 +102,83 @@
     </div>
     <p id="updateResult" class="aiff-update-result" role="status" aria-live="polite"></p>
 
-    <hr class="aiff-divider" />
+    <footer class="aiff-footer">
+      <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Browse compatible providers</a>
+      <span aria-hidden="true">·</span>
+      <a id="modelsLink" href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
+      <span aria-hidden="true">·</span>
+      <button id="supportLink" class="aiff-footer-btn" type="button">Support</button>
+    </footer>
+  </main>
 
-    <section class="aiff-feedback" aria-labelledby="feedbackHeading">
-      <h2 class="aiff-section-title" id="feedbackHeading">Feedback</h2>
+  <!-- ============ Support modal ============ -->
+  <div id="supportModal" class="aiff-modal-backdrop" hidden>
+    <div
+      class="aiff-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="supportModalTitle"
+    >
+      <header class="aiff-modal-header">
+        <h2 class="aiff-modal-title" id="supportModalTitle">Support &amp; Feedback</h2>
+        <button id="supportModalClose" class="aiff-modal-close" type="button" aria-label="Close support dialog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </header>
 
-      <label class="aiff-label" for="feedbackEmail">Email <span class="aiff-optional">(optional)</span></label>
-      <input
-        id="feedbackEmail"
-        class="aiff-input"
-        type="email"
-        placeholder="you@example.com"
-        autocomplete="email"
-        spellcheck="false"
-      />
+      <div class="aiff-modal-body">
+        <label class="aiff-label" for="feedbackEmail">Email <span class="aiff-optional">(optional)</span></label>
+        <input
+          id="feedbackEmail"
+          class="aiff-input"
+          type="email"
+          placeholder="you@example.com"
+          autocomplete="email"
+          spellcheck="false"
+        />
 
-      <label class="aiff-label" for="feedbackMessage">Feedback or bug report</label>
-      <textarea
-        id="feedbackMessage"
-        class="aiff-input aiff-textarea"
-        rows="4"
-        placeholder="What worked, what didn't, and what you expected."
-        spellcheck="true"
-      ></textarea>
+        <label class="aiff-label" for="feedbackMessage">Feedback or bug report</label>
+        <textarea
+          id="feedbackMessage"
+          class="aiff-input aiff-textarea"
+          rows="4"
+          placeholder="What worked, what didn't, and what you expected."
+          spellcheck="true"
+        ></textarea>
 
-      <!-- Detected page keywords become clickable shortcuts below the textarea -->
-      <div id="feedbackLinks" class="aiff-links" hidden></div>
+        <!-- Detected page keywords become clickable shortcuts below the textarea -->
+        <div id="feedbackLinks" class="aiff-links" hidden></div>
 
-      <div class="aiff-feedback-actions">
-        <button id="feedbackBtn" class="aiff-btn-primary" type="button">Send Feedback</button>
+        <div class="aiff-feedback-actions">
+          <button id="feedbackBtn" class="aiff-btn-primary" type="button">Send Feedback</button>
+        </div>
+        <p id="feedbackStatus" class="aiff-status" role="status" aria-live="polite"></p>
+
         <a
           id="githubIssueLink"
-          class="aiff-btn-ghost aiff-btn-link"
+          class="aiff-btn-ghost aiff-btn-link aiff-btn-block"
           href="https://github.com/nayeem-miah/ai-form-filler-extention/issues/new"
           target="_blank"
           rel="noopener noreferrer"
         >Report via GitHub Issues</a>
+
+        <div class="aiff-modal-author">
+          <p class="aiff-credit">
+            Developed with <span aria-label="love">&#10084;&#65039;</span> by
+            <strong>MD Nayeem Miah</strong>
+          </p>
+          <p class="aiff-author-links">
+            <a href="mailto:nayeem5113a@gmail.com">nayeem5113a@gmail.com</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://nayeem-miah.me/" target="_blank" rel="noopener">nayeem-miah.me</a>
+          </p>
+        </div>
       </div>
-      <p id="feedbackStatus" class="aiff-status" role="status" aria-live="polite"></p>
-    </section>
-
-    <footer class="aiff-footer">
-      <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get key</a>
-      <span aria-hidden="true">·</span>
-      <a id="modelsLink" href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
-    </footer>
-
-    <p class="aiff-credit">
-      Developed with <span aria-label="love">&#10084;&#65039;</span> by
-      <strong>MD Nayeem Miah</strong> ·
-      <a href="https://nayeem-miah.me/" target="_blank" rel="noopener">Portfolio</a> ·
-      <a href="mailto:nayeem5113a@gmail.com">nayeem5113a@gmail.com</a>
-    </p>
-  </main>
+    </div>
+  </div>
 
   <script src="options.js"></script>
 </body>
