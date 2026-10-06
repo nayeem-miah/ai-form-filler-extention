@@ -345,6 +345,72 @@ html[data-theme="dark"] {
   transform: translateX(16px);
 }
 
+/* ---------- Feedback ---------- */
+.aiff-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 20px 0 16px;
+}
+
+.aiff-section-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--aiff-muted);
+}
+
+.aiff-optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.aiff-textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.aiff-feedback-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.aiff-btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text-main);
+}
+
+.aiff-credit {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--aiff-muted);
+  text-align: center;
+}
+
+.aiff-credit strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.aiff-credit a {
+  color: var(--aiff-muted);
+  text-decoration: none;
+}
+
+.aiff-credit a:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+}
+
 /* ---------- Update checker ---------- */
 .aiff-update-row {
   display: flex;

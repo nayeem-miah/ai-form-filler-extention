@@ -126,8 +126,18 @@ each new device.
 | Field labels, placeholders, surrounding form text, page title and URL | The same provider, inside the prompt, so it can generate realistic values |
 
 There is no analytics or telemetry. Declared host permissions are limited to the
-provider APIs plus `api.github.com` for the update check; custom API hosts are
-requested on demand, only when you enter one.
+provider APIs, `api.github.com` for the update check, and `api.web3forms.com` for the
+optional feedback form. Custom API hosts are requested on demand, only when you enter
+one.
+
+**Feedback**
+
+The settings page has a feedback form. If you submit it, the message, the extension
+version, your browser's user-agent string, and the email address you typed (if any) are
+sent to **Web3Forms** (`api.web3forms.com`), a third-party form-to-email service that
+delivers the message to the maintainer's inbox. Nothing is sent unless you press *Send
+Feedback*. If you would rather not, use the **Report via GitHub Issues** link instead —
+it posts to GitHub under your own account.
 
 ---
 
@@ -296,6 +306,22 @@ node --check options.js
 
 ---
 
+## Author & Contact
+
+**MD Nayeem Miah**
+
+- Portfolio: <https://nayeem-miah.me/>
+- Email: <nayeem5113a@gmail.com>
+- Issues: <https://github.com/nayeem-miah/ai-form-filler-extention/issues>
+
+Found a bug on a specific site, or a provider that needs better handling? Open an
+issue — site-specific DOM details (the element markup, or `[AIFF]` logs from the
+DevTools console) make it far faster to fix.
+
+---
+
 ## License
 
 MIT
+
+Made for developers who are tired of typing test data by hand.

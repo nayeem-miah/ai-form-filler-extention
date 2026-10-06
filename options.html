@@ -102,11 +102,55 @@
     </div>
     <p id="updateResult" class="aiff-update-result" role="status" aria-live="polite"></p>
 
+    <hr class="aiff-divider" />
+
+    <section class="aiff-feedback" aria-labelledby="feedbackHeading">
+      <h2 class="aiff-section-title" id="feedbackHeading">Feedback</h2>
+
+      <label class="aiff-label" for="feedbackEmail">Email <span class="aiff-optional">(optional)</span></label>
+      <input
+        id="feedbackEmail"
+        class="aiff-input"
+        type="email"
+        placeholder="you@example.com"
+        autocomplete="email"
+        spellcheck="false"
+      />
+
+      <label class="aiff-label" for="feedbackMessage">Feedback or bug report</label>
+      <textarea
+        id="feedbackMessage"
+        class="aiff-input aiff-textarea"
+        rows="4"
+        placeholder="What worked, what didn't, and what you expected."
+        spellcheck="true"
+      ></textarea>
+
+      <div class="aiff-feedback-actions">
+        <button id="feedbackBtn" class="aiff-btn-primary" type="button">Send Feedback</button>
+        <a
+          id="githubIssueLink"
+          class="aiff-btn-ghost aiff-btn-link"
+          href="https://github.com/nayeem-miah/ai-form-filler-extention/issues/new"
+          target="_blank"
+          rel="noopener noreferrer"
+        >Report via GitHub Issues</a>
+      </div>
+      <p id="feedbackStatus" class="aiff-status" role="status" aria-live="polite"></p>
+    </section>
+
     <footer class="aiff-footer">
       <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get key</a>
       <span aria-hidden="true">·</span>
       <a id="modelsLink" href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
     </footer>
+
+    <p class="aiff-credit">
+      Developed with <span aria-label="love">&#10084;&#65039;</span> by
+      <strong>MD Nayeem Miah</strong> ·
+      <a href="https://nayeem-miah.me/" target="_blank" rel="noopener">Portfolio</a> ·
+      <a href="mailto:nayeem5113a@gmail.com">nayeem5113a@gmail.com</a>
+    </p>
   </main>
 
   <script src="options.js"></script>

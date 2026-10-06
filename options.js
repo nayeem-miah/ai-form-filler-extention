@@ -8,6 +8,16 @@
 // Mirrors PROVIDERS in background.js. background.js additionally accepts
 // sane future model ids per provider, so a saved value not listed here
 // still works (shown as "(saved)").
+// ---------------------------------------------------------------------------
+// Feedback form (Web3Forms)
+// ---------------------------------------------------------------------------
+// Replace this with your own key from https://web3forms.com (Dashboard →
+// Access Key). Leave it blank to disable in-app submissions: the button then
+// tells the user to use the GitHub Issues link instead.
+const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
+const WEB3FORMS_ACCESS_KEY = 'YOUR_WEB3FORMS_ACCESS_KEY';
+const REPO_ISSUES_URL = 'https://github.com/nayeem-miah/ai-form-filler-extention/issues/new';
+
 const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
@@ -98,6 +108,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const updateBtn = document.getElementById('updateBtn');
   const updateResult = document.getElementById('updateResult');
   const randomizeToggle = document.getElementById('randomizeToggle');
+  const feedbackBtn = document.getElementById('feedbackBtn');
+  const feedbackEmail = document.getElementById('feedbackEmail');
+  const feedbackMessage = document.getElementById('feedbackMessage');
+  const feedbackStatus = document.getElementById('feedbackStatus');
+  const githubIssueLink = document.getElementById('githubIssueLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
   const toggleBtn = document.getElementById('toggleVisibility');
@@ -686,6 +701,80 @@ function requestHostPermission(url, onResult) {
     } finally {
       updateBtn.disabled = false;
       updateBtn.textContent = 'Check for Updates';
+    }
+  });
+
+  // ---- Feedback form (Web3Forms) ----
+
+  function setFeedbackStatus(message, kind) {
+    feedbackStatus.textContent = message;
+    feedbackStatus.className = 'aiff-status' + (kind ? ' aiff-status-' + kind : '');
+  }
+
+  function extensionVersion() {
+    try {
+      return chrome.runtime.getManifest().version;
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  feedbackBtn.addEventListener('click', async () => {
+    const message = feedbackMessage.value.trim();
+    if (!message) {
+      setFeedbackStatus('Please describe your feedback or the bug first.', 'error');
+      feedbackMessage.focus();
+      return;
+    }
+
+    const email = feedbackEmail.value.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFeedbackStatus('That email address does not look valid.', 'error');
+      feedbackEmail.focus();
+      return;
+    }
+
+    if (!WEB3FORMS_ACCESS_KEY || WEB3FORMS_ACCESS_KEY === 'YOUR_WEB3FORMS_ACCESS_KEY') {
+      setFeedbackStatus(
+        'In-app feedback is not configured yet. Please use the GitHub Issues link below.',
+        'error'
+      );
+      return;
+    }
+
+    feedbackBtn.disabled = true;
+    setFeedbackStatus('Sending…');
+    try {
+      const res = await fetch(WEB3FORMS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          access_key: WEB3FORMS_ACCESS_KEY,
+          subject: 'AI Form Filler Assistant — feedback (v' + extensionVersion() + ')',
+          from_name: 'AI Form Filler Assistant',
+          email: email || 'not provided',
+          message: message,
+          // Custom fields show up as columns in the Web3Forms dashboard.
+          extension_version: extensionVersion(),
+          user_agent: navigator.userAgent,
+          source: 'chrome-extension-options'
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data && data.success) {
+        setFeedbackStatus('Thanks! Your feedback was sent.', 'success');
+        feedbackMessage.value = '';
+      } else {
+        const why = (data && (data.message || data.error)) || 'HTTP ' + res.status;
+        setFeedbackStatus('Could not send feedback: ' + String(why).slice(0, 200), 'error');
+      }
+    } catch (err) {
+      setFeedbackStatus(
+        'Could not send feedback: ' + String((err && err.message) || err).slice(0, 200),
+        'error'
+      );
+    } finally {
+      feedbackBtn.disabled = false;
     }
   });
 });
