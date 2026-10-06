@@ -136,6 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const supportLink = document.getElementById('supportLink');
   const supportModal = document.getElementById('supportModal');
   const supportModalClose = document.getElementById('supportModalClose');
+  const feedbackKey = document.getElementById('feedbackKey');
+  const feedbackKeyToggle = document.getElementById('feedbackKeyToggle');
+  const feedbackKeySave = document.getElementById('feedbackKeySave');
+  const feedbackKeyStatus = document.getElementById('feedbackKeyStatus');
   const githubIssueLink = document.getElementById('githubIssueLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -728,6 +732,59 @@ function requestHostPermission(url, onResult) {
     }
   });
 
+  // ---- Feedback delivery key (stored on this device only) ----
+
+  // Key belongs to the extension author, not the end user, so it is kept out of
+  // the repository and in chrome.storage.local (device-local, never synced).
+  // Committing it would let anyone exhaust the 250/month free quota by spamming.
+  const FEEDBACK_KEY_STORE = 'web3formsAccessKey';
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function readFeedbackKey(cb) {
+    chrome.storage.local.get(FEEDBACK_KEY_STORE, (r) => {
+      cb(String((r && r[FEEDBACK_KEY_STORE]) || '').trim());
+    });
+  }
+
+  function setFeedbackKeyStatus(msg, kind) {
+    if (feedbackKeyStatus) feedbackKeyStatus.textContent = msg || '';
+    if (feedbackKeyStatus) {
+      feedbackKeyStatus.classList.toggle('is-error', kind === 'error');
+      feedbackKeyStatus.classList.toggle('is-success', kind === 'success');
+    }
+  }
+
+  readFeedbackKey((k) => {
+    if (feedbackKey && k) feedbackKey.value = k;
+  });
+
+  feedbackKeyToggle.addEventListener('click', () => {
+    const showing = feedbackKey.type === 'text';
+    feedbackKey.type = showing ? 'password' : 'text';
+    feedbackKeyToggle.setAttribute('aria-label', showing ? 'Show access key' : 'Hide access key');
+  });
+
+  feedbackKeySave.addEventListener('click', () => {
+    const value = feedbackKey.value.trim();
+    if (!value) {
+      setFeedbackKeyStatus('Paste your access key first.', 'error');
+      feedbackKey.focus();
+      return;
+    }
+    if (!UUID_RE.test(value)) {
+      setFeedbackKeyStatus('That does not look like a Web3Forms access key.', 'error');
+      feedbackKey.focus();
+      return;
+    }
+    chrome.storage.local.set({ [FEEDBACK_KEY_STORE]: value }, () => {
+      if (chrome.runtime.lastError) {
+        setFeedbackKeyStatus('Could not save: ' + chrome.runtime.lastError.message, 'error');
+        return;
+      }
+      setFeedbackKeyStatus('Saved. You can send feedback now.', 'success');
+    });
+  });
+
   // ---- Support modal (open / close) ----
 
   let lastFocusedBeforeModal = null;
@@ -863,9 +920,11 @@ function requestHostPermission(url, onResult) {
       return;
     }
 
-    if (!WEB3FORMS_ACCESS_KEY || WEB3FORMS_ACCESS_KEY === 'YOUR_WEB3FORMS_ACCESS_KEY') {
+    const storedKey = await new Promise((resolve) => readFeedbackKey(resolve));
+    const accessKey = storedKey || WEB3FORMS_ACCESS_KEY;
+    if (!accessKey || accessKey === 'YOUR_WEB3FORMS_ACCESS_KEY') {
       setFeedbackStatus(
-        'In-app feedback is not configured yet. Please use the GitHub Issues link below.',
+        'No feedback key saved yet. Open "Email delivery not working?" below and paste your free Web3Forms access key, or use the GitHub Issues link.',
         'error'
       );
       return;
@@ -878,7 +937,7 @@ function requestHostPermission(url, onResult) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
-          access_key: WEB3FORMS_ACCESS_KEY,
+          access_key: accessKey,
           subject: 'AI Form Filler Assistant — feedback (v' + extensionVersion() + ')',
           from_name: 'AI Form Filler Assistant',
           email: email || 'not provided',
