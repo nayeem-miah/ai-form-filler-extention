@@ -130,78 +130,25 @@
       </header>
 
       <div class="aiff-modal-body">
-        <details class="aiff-setup">
-          <summary class="aiff-setup-summary">Email delivery not working? Set up the key</summary>
-          <div class="aiff-setup-body">
-            <p class="aiff-setup-note">
-              Feedback is delivered by Web3Forms. Paste your free access key once — it is
-              stored on this device only and sent nowhere except Web3Forms.
-            </p>
-            <label class="aiff-label" for="feedbackKey">Web3Forms access key</label>
-            <div class="aiff-input-wrap">
-              <input
-                id="feedbackKey"
-                class="aiff-input"
-                type="password"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <button id="feedbackKeyToggle" class="aiff-eye-btn" type="button" aria-label="Show access key">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-            </div>
-            <div class="aiff-actions aiff-setup-actions">
-              <button id="feedbackKeySave" class="aiff-btn-ghost aiff-btn-sm" type="button">Save key</button>
-              <a
-                id="web3formsLink"
-                class="aiff-btn-ghost aiff-btn-sm"
-                href="https://web3forms.com/dashboard"
-                target="_blank"
-                rel="noopener noreferrer"
-              >Get a free key</a>
-            </div>
-            <p id="feedbackKeyStatus" class="aiff-status" role="status" aria-live="polite"></p>
-          </div>
-        </details>
-
-        <label class="aiff-label" for="feedbackEmail">Email <span class="aiff-optional">(optional)</span></label>
-        <input
-          id="feedbackEmail"
-          class="aiff-input"
-          type="email"
-          placeholder="you@example.com"
-          autocomplete="email"
-          spellcheck="false"
-        />
-
-        <label class="aiff-label" for="feedbackMessage">Feedback or bug report</label>
-        <textarea
-          id="feedbackMessage"
-          class="aiff-input aiff-textarea"
-          rows="4"
-          placeholder="What worked, what didn't, and what you expected."
-          spellcheck="true"
-        ></textarea>
-
-        <!-- Detected page keywords become clickable shortcuts below the textarea -->
-        <div id="feedbackLinks" class="aiff-links" hidden></div>
-
-        <div class="aiff-feedback-actions">
-          <button id="feedbackBtn" class="aiff-btn-primary" type="button">Send Feedback</button>
-        </div>
-        <p id="feedbackStatus" class="aiff-status" role="status" aria-live="polite"></p>
+        <p class="aiff-support-intro">
+          Found a bug, or have an idea for the next update? Open an issue on GitHub —
+          it lands straight in the project tracker and you can follow the reply.
+        </p>
 
         <a
           id="githubIssueLink"
-          class="aiff-btn-ghost aiff-btn-link aiff-btn-block"
+          class="aiff-btn-link aiff-btn-solid"
           href="https://github.com/nayeem-miah/ai-form-filler-extention/issues/new"
           target="_blank"
           rel="noopener noreferrer"
-        >Report via GitHub Issues</a>
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          Report via GitHub Issues
+        </a>
 
         <div class="aiff-modal-author">
           <p class="aiff-credit">

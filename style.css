@@ -1,10 +1,10 @@
-/* style.css
+﻿/* style.css
  * Serves two roles:
- *  1. Content-script scoping layer — the floating buttons live in Shadow DOM
+ *  1. Content-script scoping layer â€” the floating buttons live in Shadow DOM
  *     (see content.js), so this file only pins the host container and provides
  *     light-DOM fallback classes.
- *  2. Options page design system — minimalist Vercel/Linear-inspired card
- *     (compact 400–440px, subtle borders, 12–16px radii, soft shadow),
+ *  2. Options page design system â€” minimalist Vercel/Linear-inspired card
+ *     (compact 400â€“440px, subtle borders, 12â€“16px radii, soft shadow),
  *     with light + dark themes via [data-theme] on <html>.
  */
 
@@ -17,6 +17,7 @@ html[data-theme="light"] {
   --text-main: #171717;
   --border-color: #e5e5e5;
   --primary: #171717;
+  --aiff-on-primary: #ffffff;
   /* Supporting tokens */
   --aiff-muted: #737373;
   --aiff-bg: #fafafa;
@@ -37,6 +38,7 @@ html[data-theme="dark"] {
   --text-main: #ededed;
   --border-color: #262626;
   --primary: #ededed;
+  --aiff-on-primary: #0a0a0a;
   /* Supporting tokens */
   --aiff-muted: #a1a1a1;
   --aiff-bg: #000000;
@@ -438,65 +440,6 @@ html[data-theme="dark"] {
   padding: 6px 18px 18px;
 }
 
-/* ---------- Feedback key setup (collapsible) ---------- */
-.aiff-setup {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  background: var(--aiff-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-}
-
-.aiff-setup-summary {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--aiff-muted);
-  cursor: pointer;
-  list-style: none;
-  transition: color 0.12s ease;
-}
-
-.aiff-setup-summary::-webkit-details-marker {
-  display: none;
-}
-
-.aiff-setup-summary::before {
-  content: '\203A';
-  display: inline-block;
-  margin-right: 6px;
-  font-weight: 700;
-  transition: transform 0.15s ease;
-}
-
-.aiff-setup[open] .aiff-setup-summary::before {
-  transform: rotate(90deg);
-}
-
-.aiff-setup-summary:hover {
-  color: var(--text-main);
-}
-
-.aiff-setup-summary:focus-visible {
-  outline: none;
-  border-radius: 4px;
-  box-shadow: 0 0 0 3px var(--aiff-focus-ring);
-}
-
-.aiff-setup-body {
-  padding-top: 10px;
-}
-
-.aiff-setup-note {
-  margin: 0 0 10px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--aiff-muted);
-}
-
-.aiff-setup-actions {
-  margin-top: 10px;
-}
-
 /* ---------- Author info ---------- */
 .aiff-modal-author {
   margin-top: 18px;
@@ -524,11 +467,6 @@ html[data-theme="dark"] {
 
 .aiff-modal .aiff-credit {
   margin: 0;
-}
-
-.aiff-btn-block {
-  width: 100%;
-  margin-top: 10px;
 }
 
 /* Prevent background scroll while the modal is open */
@@ -559,65 +497,34 @@ body.aiff-modal-open {
   box-shadow: 0 0 0 3px var(--aiff-focus-ring);
 }
 
-.aiff-optional {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-  opacity: 0.75;
-}
 
-.aiff-textarea {
-  min-height: 88px;
-  resize: vertical;
-  line-height: 1.5;
-}
-
-.aiff-feedback-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-/* Detected page shortcuts under the feedback textarea */
-.aiff-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.aiff-links[hidden] {
-  display: none !important;
-}
-
-.aiff-links-lead {
-  font-size: 11.5px;
-  font-weight: 500;
+.aiff-support-intro {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--aiff-muted);
-  margin-right: 2px;
 }
 
-.aiff-link-chip {
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 12px;
+/* The single primary action in the support modal. */
+.aiff-btn-solid {
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-main);
-  background: var(--aiff-hover-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  color: var(--aiff-on-primary);
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 9px;
+  text-decoration: none;
 }
 
-.aiff-link-chip:hover {
-  background: var(--aiff-input-border);
-  border-color: var(--aiff-muted);
-  transform: translateY(-1px);
+.aiff-btn-solid:hover {
+  opacity: 0.88;
 }
 
-.aiff-link-chip:focus-visible {
+.aiff-btn-solid:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--aiff-focus-ring);
 }

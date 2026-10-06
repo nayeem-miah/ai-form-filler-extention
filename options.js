@@ -1,4 +1,4 @@
-// options.js — settings UI logic (CSP compliant: no inline handlers).
+﻿// options.js â€” settings UI logic (CSP compliant: no inline handlers).
 // Provider (Gemini / OpenAI) + model + per-provider API keys are persisted
 // via chrome.storage.sync. Theme via chrome.storage.sync too (falls back to
 // OS prefers-color-scheme). Connection tests are routed through
@@ -8,35 +8,9 @@
 // Mirrors PROVIDERS in background.js. background.js additionally accepts
 // sane future model ids per provider, so a saved value not listed here
 // still works (shown as "(saved)").
-// ---------------------------------------------------------------------------
-// Feedback form (Web3Forms)
-// ---------------------------------------------------------------------------
-// Replace this with your own key from https://web3forms.com (Dashboard →
-// Access Key). Leave it blank to disable in-app submissions: the button then
-// tells the user to use the GitHub Issues link instead.
-const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
-const WEB3FORMS_ACCESS_KEY = 'YOUR_WEB3FORMS_ACCESS_KEY';
+// Feedback is handled entirely through GitHub Issues: no email backend, no
+// third-party form relay, and therefore no API key to store or ship.
 const REPO_ISSUES_URL = 'https://github.com/nayeem-miah/ai-form-filler-extention/issues/new';
-
-// ---------------------------------------------------------------------------
-// Feedback page shortcuts
-// ---------------------------------------------------------------------------
-// When your feedback text mentions one of these keywords, a clickable chip
-// appears under the textarea that opens the matching page in a new tab.
-// EDIT THIS to match your own routes — add, remove or retarget entries freely.
-//
-//   label    -> text shown on the chip
-//   keywords -> matched against the feedback text (case-insensitive)
-//   url      -> opened in a new tab when the chip is clicked
-const PAGE_LINKS = [
-  { label: 'Contract', url: 'https://quick-bus-bd.web.app/contract', keywords: ['contract', 'agreement'] },
-  { label: 'Support', url: 'https://quick-bus-bd.web.app/support', keywords: ['support', 'help'] },
-  { label: 'Invoices', url: 'https://quick-bus-bd.web.app/invoices', keywords: ['invoice', 'invoices'] },
-  { label: 'Clients', url: 'https://quick-bus-bd.web.app/clients', keywords: ['client', 'clients'] },
-  { label: 'Items', url: 'https://quick-bus-bd.web.app/items', keywords: ['item', 'items'] },
-  { label: 'Checkout', url: 'https://quick-bus-bd.web.app/checkout', keywords: ['checkout', 'cart'] },
-  { label: 'Settings', url: 'https://quick-bus-bd.web.app/settings', keywords: ['settings', 'config'] }
-];
 
 const PROVIDERS = {
   gemini: {
@@ -89,7 +63,7 @@ const DEFAULT_PROVIDER = 'gemini';
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_THEME = 'light';
 
-// Static SVG icon strings (no emojis in the UI; CSP-safe — no code execution).
+// Static SVG icon strings (no emojis in the UI; CSP-safe â€” no code execution).
 const ICON_EYE =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_EYE_OFF =
@@ -128,18 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const updateBtn = document.getElementById('updateBtn');
   const updateResult = document.getElementById('updateResult');
   const randomizeToggle = document.getElementById('randomizeToggle');
-  const feedbackBtn = document.getElementById('feedbackBtn');
-  const feedbackEmail = document.getElementById('feedbackEmail');
-  const feedbackMessage = document.getElementById('feedbackMessage');
-  const feedbackStatus = document.getElementById('feedbackStatus');
-  const feedbackLinks = document.getElementById('feedbackLinks');
   const supportLink = document.getElementById('supportLink');
   const supportModal = document.getElementById('supportModal');
   const supportModalClose = document.getElementById('supportModalClose');
-  const feedbackKey = document.getElementById('feedbackKey');
-  const feedbackKeyToggle = document.getElementById('feedbackKeyToggle');
-  const feedbackKeySave = document.getElementById('feedbackKeySave');
-  const feedbackKeyStatus = document.getElementById('feedbackKeyStatus');
   const githubIssueLink = document.getElementById('githubIssueLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -473,14 +438,14 @@ function requestHostPermission(url, onResult) {
       });
       if (response && response.ok) {
         setStatus(
-          `Saved and connected — ${catalog.label} is working with ${response.model || model}.`,
+          `Saved and connected â€” ${catalog.label} is working with ${response.model || model}.`,
           'success'
         );
       } else if (response && response.error === 'NO_API_KEY') {
         setStatus('Saved, but no API key was available to test with.', 'error');
       } else {
         setStatus(
-          `Saved, but the connection test failed — ${String((response && response.detail) || 'unknown error').slice(0, 300)}`,
+          `Saved, but the connection test failed â€” ${String((response && response.detail) || 'unknown error').slice(0, 300)}`,
           'error'
         );
       }
@@ -488,11 +453,11 @@ function requestHostPermission(url, onResult) {
       const msg = String((err && err.message) || err || '');
       if (/extension context invalidated|context invalidated/i.test(msg)) {
         setStatus(
-          'Settings saved. The extension was reloaded — reopen this page to finish testing.',
+          'Settings saved. The extension was reloaded â€” reopen this page to finish testing.',
           'info'
         );
       } else {
-        setStatus(`Settings saved, but the test errored — ${msg.slice(0, 200)}`, 'error');
+        setStatus(`Settings saved, but the test errored â€” ${msg.slice(0, 200)}`, 'error');
       }
     } finally {
       setBusy(false);
@@ -506,7 +471,7 @@ function requestHostPermission(url, onResult) {
 
     const { key, model, isCustom, catalog } = form;
     providerKeys[currentProvider] = key;
-    setBusy(true, 'Saving…');
+    setBusy(true, 'Savingâ€¦');
 
     const persist = () => {
       const payload = {
@@ -527,15 +492,15 @@ function requestHostPermission(url, onResult) {
           return;
         }
         setFavicon(true);
-        // Saved successfully — now verify the connection in the same click.
-        setBusy(true, 'Testing…');
-        setStatus(`Saved. Testing ${catalog.label} ${model}…`, 'info');
+        // Saved successfully â€” now verify the connection in the same click.
+        setBusy(true, 'Testingâ€¦');
+        setStatus(`Saved. Testing ${catalog.label} ${model}â€¦`, 'info');
         runConnectionTest(form);
       });
     };
 
     if (isCustom) {
-      // Custom endpoints need a host permission — ask inside this click.
+      // Custom endpoints need a host permission â€” ask inside this click.
       hasHostPermission(form.baseUrl).then((has) => {
         if (has) {
           persist();
@@ -548,7 +513,7 @@ function requestHostPermission(url, onResult) {
           }
           setBusy(false);
           setStatus(
-            `Cannot reach ${originPatternFor(form.baseUrl) || form.baseUrl} — ${errMessage || 'permission denied'}`,
+            `Cannot reach ${originPatternFor(form.baseUrl) || form.baseUrl} â€” ${errMessage || 'permission denied'}`,
             'error'
           );
         });
@@ -560,7 +525,7 @@ function requestHostPermission(url, onResult) {
 
   // ---- Remove current provider key (keeps model + theme + other keys) ----
   clearBtn.addEventListener('click', () => {
-    setBusy(true, 'Removing…');
+    setBusy(true, 'Removingâ€¦');
     providerKeys[currentProvider] = '';
     apiKeyInput.value = '';
     const payload = {
@@ -679,8 +644,8 @@ function requestHostPermission(url, onResult) {
 
   updateBtn.addEventListener('click', async () => {
     updateBtn.disabled = true;
-    updateBtn.textContent = 'Checking…';
-    setUpdateStatus('pending', 'Checking GitHub for the latest release…');
+    updateBtn.textContent = 'Checkingâ€¦';
+    setUpdateStatus('pending', 'Checking GitHub for the latest releaseâ€¦');
 
     try {
       const response = await chrome.runtime.sendMessage({ type: 'AIFF_CHECK_UPDATE' });
@@ -694,14 +659,14 @@ function requestHostPermission(url, onResult) {
         if (remote && compareVersions(remote, local) > 0) {
           setUpdateStatus(
             'available',
-            `🚀 New Version Available! (installed v${installed})`,
+            `ðŸš€ New Version Available! (installed v${installed})`,
             `Download v${remoteLabel}`,
             response.releaseUrl
           );
         } else {
           setUpdateStatus(
             'current',
-            `✅ Up to date (v${installed})`,
+            `âœ… Up to date (v${installed})`,
             '',
             ''
           );
@@ -709,80 +674,27 @@ function requestHostPermission(url, onResult) {
       } else if (response && response.error === 'NO_RELEASE') {
         setUpdateStatus(
           'neutral',
-          `ℹ️ No published releases yet — you're on the latest (v${installed}).`,
+          `â„¹ï¸ No published releases yet â€” you're on the latest (v${installed}).`,
           'View repository',
           'https://github.com/nayeem-miah/ai-form-filler-extention'
         );
       } else if (response && response.error === 'RATE_LIMITED') {
-        setUpdateStatus('error', '⚠️ GitHub rate limit reached. Try again shortly.', '', '');
+        setUpdateStatus('error', 'âš ï¸ GitHub rate limit reached. Try again shortly.', '', '');
       } else {
         const detail = response && response.detail ? ` ${response.detail}` : '';
-        setUpdateStatus('error', `⚠️ Could not check for updates.${detail}`.slice(0, 300), '', '');
+        setUpdateStatus('error', `âš ï¸ Could not check for updates.${detail}`.slice(0, 300), '', '');
       }
     } catch (err) {
       const msg = String((err && err.message) || err || '');
       if (/extension context invalidated|context invalidated/i.test(msg)) {
-        setUpdateStatus('error', '⚠️ Extension reloaded — reopen this page to check again.', '', '');
+        setUpdateStatus('error', 'âš ï¸ Extension reloaded â€” reopen this page to check again.', '', '');
       } else {
-        setUpdateStatus('error', `⚠️ Update check failed: ${msg}`.slice(0, 300), '', '');
+        setUpdateStatus('error', `âš ï¸ Update check failed: ${msg}`.slice(0, 300), '', '');
       }
     } finally {
       updateBtn.disabled = false;
       updateBtn.textContent = 'Check for Updates';
     }
-  });
-
-  // ---- Feedback delivery key (stored on this device only) ----
-
-  // Key belongs to the extension author, not the end user, so it is kept out of
-  // the repository and in chrome.storage.local (device-local, never synced).
-  // Committing it would let anyone exhaust the 250/month free quota by spamming.
-  const FEEDBACK_KEY_STORE = 'web3formsAccessKey';
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-  function readFeedbackKey(cb) {
-    chrome.storage.local.get(FEEDBACK_KEY_STORE, (r) => {
-      cb(String((r && r[FEEDBACK_KEY_STORE]) || '').trim());
-    });
-  }
-
-  function setFeedbackKeyStatus(msg, kind) {
-    if (feedbackKeyStatus) feedbackKeyStatus.textContent = msg || '';
-    if (feedbackKeyStatus) {
-      feedbackKeyStatus.classList.toggle('is-error', kind === 'error');
-      feedbackKeyStatus.classList.toggle('is-success', kind === 'success');
-    }
-  }
-
-  readFeedbackKey((k) => {
-    if (feedbackKey && k) feedbackKey.value = k;
-  });
-
-  feedbackKeyToggle.addEventListener('click', () => {
-    const showing = feedbackKey.type === 'text';
-    feedbackKey.type = showing ? 'password' : 'text';
-    feedbackKeyToggle.setAttribute('aria-label', showing ? 'Show access key' : 'Hide access key');
-  });
-
-  feedbackKeySave.addEventListener('click', () => {
-    const value = feedbackKey.value.trim();
-    if (!value) {
-      setFeedbackKeyStatus('Paste your access key first.', 'error');
-      feedbackKey.focus();
-      return;
-    }
-    if (!UUID_RE.test(value)) {
-      setFeedbackKeyStatus('That does not look like a Web3Forms access key.', 'error');
-      feedbackKey.focus();
-      return;
-    }
-    chrome.storage.local.set({ [FEEDBACK_KEY_STORE]: value }, () => {
-      if (chrome.runtime.lastError) {
-        setFeedbackKeyStatus('Could not save: ' + chrome.runtime.lastError.message, 'error');
-        return;
-      }
-      setFeedbackKeyStatus('Saved. You can send feedback now.', 'success');
-    });
   });
 
   // ---- Support modal (open / close) ----
@@ -794,8 +706,9 @@ function requestHostPermission(url, onResult) {
     lastFocusedBeforeModal = document.activeElement;
     supportModal.hidden = false;
     document.body.classList.add('aiff-modal-open');
+    // Focus the primary action, since the form fields are gone.
     try {
-      feedbackEmail.focus();
+      githubIssueLink.focus();
     } catch {
       /* ignore */
     }
@@ -828,141 +741,4 @@ function requestHostPermission(url, onResult) {
     if (e.key === 'Escape' && supportModal && !supportModal.hidden) closeSupportModal();
   });
 
-  // ---- Feedback page shortcuts (keyword -> clickable chip) ----
-
-  function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  /** Entries in PAGE_LINKS whose keywords appear in the text (word-boundary). */
-  function detectPageLinks(text) {
-    const haystack = ' ' + String(text || '').toLowerCase().replace(/\s+/g, ' ') + ' ';
-    const found = [];
-    for (const entry of PAGE_LINKS) {
-      const hit = (entry.keywords || []).some((word) => {
-        const pattern = new RegExp('(^|[^a-z0-9])' + escapeRegExp(word) + '([^a-z0-9]|$)', 'i');
-        return pattern.test(haystack);
-      });
-      if (hit) found.push(entry);
-    }
-    return found;
-  }
-
-  function openExternal(url) {
-    try {
-      // Extension pages can create tabs without the "tabs" permission.
-      chrome.tabs.create({ url, active: true });
-    } catch {
-      window.open(url, '_blank', 'noopener');
-    }
-  }
-
-  function renderFeedbackLinks() {
-    if (!feedbackLinks) return;
-    const matches = detectPageLinks(feedbackMessage.value);
-    feedbackLinks.textContent = '';
-
-    if (matches.length === 0) {
-      feedbackLinks.hidden = true;
-      return;
-    }
-    feedbackLinks.hidden = false;
-
-    const lead = document.createElement('span');
-    lead.className = 'aiff-links-lead';
-    lead.textContent = 'Jump to:';
-    feedbackLinks.appendChild(lead);
-
-    for (const entry of matches) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'aiff-link-chip';
-      chip.textContent = entry.label;
-      chip.title = `Open ${entry.url} in a new tab`;
-      chip.addEventListener('mousedown', (e) => e.preventDefault());
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        openExternal(entry.url);
-      });
-      feedbackLinks.appendChild(chip);
-    }
-  }
-
-  feedbackMessage.addEventListener('input', renderFeedbackLinks);
-
-  // ---- Feedback form (Web3Forms) ----
-
-  function setFeedbackStatus(message, kind) {
-    feedbackStatus.textContent = message;
-    feedbackStatus.className = 'aiff-status' + (kind ? ' aiff-status-' + kind : '');
-  }
-
-  function extensionVersion() {
-    try {
-      return chrome.runtime.getManifest().version;
-    } catch {
-      return 'unknown';
-    }
-  }
-
-  feedbackBtn.addEventListener('click', async () => {
-    const message = feedbackMessage.value.trim();
-    if (!message) {
-      setFeedbackStatus('Please describe your feedback or the bug first.', 'error');
-      feedbackMessage.focus();
-      return;
-    }
-
-    const email = feedbackEmail.value.trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setFeedbackStatus('That email address does not look valid.', 'error');
-      feedbackEmail.focus();
-      return;
-    }
-
-    const storedKey = await new Promise((resolve) => readFeedbackKey(resolve));
-    const accessKey = storedKey || WEB3FORMS_ACCESS_KEY;
-    if (!accessKey || accessKey === 'YOUR_WEB3FORMS_ACCESS_KEY') {
-      setFeedbackStatus(
-        'No feedback key saved yet. Open "Email delivery not working?" below and paste your free Web3Forms access key, or use the GitHub Issues link.',
-        'error'
-      );
-      return;
-    }
-
-    feedbackBtn.disabled = true;
-    setFeedbackStatus('Sending…');
-    try {
-      const res = await fetch(WEB3FORMS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          access_key: accessKey,
-          subject: 'AI Form Filler Assistant — feedback (v' + extensionVersion() + ')',
-          from_name: 'AI Form Filler Assistant',
-          email: email || 'not provided',
-          message: message,
-          // Custom fields show up as columns in the Web3Forms dashboard.
-          extension_version: extensionVersion(),
-          user_agent: navigator.userAgent,
-          source: 'chrome-extension-options'
-        })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data && data.success) {
-        setFeedbackStatus('Thanks! Your feedback was sent.', 'success');
-        feedbackMessage.value = '';
-      } else {
-        const why = (data && (data.message || data.error)) || 'HTTP ' + res.status;
-        setFeedbackStatus('Could not send feedback: ' + String(why).slice(0, 200), 'error');
-      }
-    } catch (err) {
-      setFeedbackStatus(
-        'Could not send feedback: ' + String((err && err.message) || err).slice(0, 200),
-        'error'
-      );
-    } finally {
-      feedbackBtn.disabled = false;
-    }
-  });
 });
