@@ -505,7 +505,18 @@ body.aiff-modal-open {
   color: var(--aiff-muted);
 }
 
-/* The single primary action in the support modal. */
+.aiff-btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text-main);
+}
+
+/* The single primary action in the support modal.
+   Declared after .aiff-btn-link on purpose: both selectors are one class
+   deep, so source order decides, and this must win the color to keep the
+   label legible on the filled background. */
 .aiff-btn-solid {
   gap: 8px;
   flex: none;
@@ -513,11 +524,18 @@ body.aiff-modal-open {
   padding: 11px 16px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--aiff-on-primary);
+  /* Reset any inherited color first, then set the legible on-primary color.
+     Using !important because .aiff-btn-link also sets color at equal
+     specificity, and losing this race renders an invisible label. */
+  color: var(--aiff-on-primary) !important;
   background: var(--primary);
   border: 1px solid var(--primary);
   border-radius: 9px;
   text-decoration: none;
+}
+
+.aiff-btn-solid svg {
+  flex: 0 0 auto;
 }
 
 .aiff-btn-solid:hover {
@@ -527,14 +545,6 @@ body.aiff-modal-open {
 .aiff-btn-solid:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--aiff-focus-ring);
-}
-
-.aiff-btn-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  color: var(--text-main);
 }
 
 .aiff-credit {
