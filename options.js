@@ -100,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelsLink = document.getElementById('modelsLink');
   const updateBtn = document.getElementById('updateBtn');
   const updateResult = document.getElementById('updateResult');
+  const randomizeToggle = document.getElementById('randomizeToggle');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
   const testBtn = document.getElementById('testBtn');
@@ -291,7 +292,8 @@ function requestHostPermission(url, onResult) {
         'apiBaseUrl',
         'customModel',
         'apiKey',
-        'theme'
+        'theme',
+        'randomize'
       ],
       (result) => {
         if (chrome.runtime.lastError) {
@@ -302,6 +304,7 @@ function requestHostPermission(url, onResult) {
         }
         const res = result || {};
         initTheme(res.theme);
+        applyRandomize(res.randomize !== false);
         const provider = normalizeProvider(res.provider);
         providerKeys.gemini =
           (typeof res.geminiApiKey === 'string' && res.geminiApiKey.trim()) ||
@@ -584,6 +587,22 @@ function requestHostPermission(url, onResult) {
       e.preventDefault();
       saveBtn.click();
     }
+  });
+
+  // ---- Randomize toggle (stored in sync so content scripts can read it) ----
+  function applyRandomize(enabled) {
+    randomizeToggle.setAttribute('aria-checked', enabled ? 'true' : 'false');
+    randomizeToggle.classList.toggle('is-on', enabled);
+  }
+
+  randomizeToggle.addEventListener('click', () => {
+    const next = randomizeToggle.getAttribute('aria-checked') !== 'true';
+    applyRandomize(next);
+    chrome.storage.sync.set({ randomize: next }, () => {
+      if (chrome.runtime.lastError) {
+        setStatus(`Could not save preference: ${chrome.runtime.lastError.message}`, 'error');
+      }
+    });
   });
 
   // ---- GitHub update checker ----

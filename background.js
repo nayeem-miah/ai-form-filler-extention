@@ -493,7 +493,66 @@ function buildSinglePrompt(context) {
   return lines.join('\n');
 }
 
-function generateFullFormSuggestion(fields, pageMeta) {
+// ---------- Variation support (developer form testing) ----------
+
+const RANDOM_POOLS = {
+  first: ['Ava', 'Liam', 'Noor', 'Mia', 'Zara', 'Kai', 'Ivy', 'Omar', 'Lena', 'Ravi', 'Nora', 'Eli', 'Sana', 'Theo', 'Maya', 'Idris'],
+  last: ['Bennett', 'Okafor', 'Nakamura', 'Silva', 'Khan', 'Weber', 'Rossi', 'Dubois', 'Novak', 'Haddad', 'Lindqvist', 'Ferreira'],
+  companyWord: ['Logistics', 'Analytics', 'Systems', 'Partners', 'Labs', 'Supply Co', 'Ventures', 'Industries'],
+  industry: ['freight forwarding', 'renewable energy', 'marine logistics', 'agritech', 'urban planning', 'cybersecurity', 'precision manufacturing', 'cold-chain supply'],
+  city: ['Rotterdam', 'Valletta', 'Gothenburg', 'Porto', 'Cusco', 'Tashkent', 'Bologna', 'Durban', 'Tampere', 'Valparaiso'],
+  project: ['warehouse relocation', 'fleet telemetry rollout', 'supplier consolidation', 'cold-storage upgrade', 'route optimisation pilot', 'packaging redesign']
+};
+
+function pickRandom(pool) {
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// One coherent anchor per run: every field in the batch stays consistent
+// (same person, same company) while differing between runs.
+function buildRandomPersona() {
+  const first = pickRandom(RANDOM_POOLS.first);
+  const last = pickRandom(RANDOM_POOLS.last);
+  return {
+    person: `${first} ${last}`,
+    company: `${last} ${pickRandom(RANDOM_POOLS.companyWord)}`,
+    industry: pickRandom(RANDOM_POOLS.industry),
+    city: pickRandom(RANDOM_POOLS.city),
+    project: pickRandom(RANDOM_POOLS.project),
+    nonce: Math.random().toString(36).slice(2, 8)
+  };
+}
+
+function personaLines(persona) {
+  return [
+    '',
+    'RANDOM ANCHOR FOR THIS RUN (ground generated values in it so this run differs from previous ones):',
+    `- Contact person: ${persona.person}`,
+    `- Company: ${persona.company}`,
+    `- Industry: ${persona.industry}`,
+    `- City: ${persona.city}`,
+    `- Current project: ${persona.project}`,
+    `- Run id: ${persona.nonce}`,
+    'Derive names, emails, addresses, references and descriptions from these. Never output the run id.'
+  ];
+}
+
+function avoidLines(avoidValues) {
+  if (!Array.isArray(avoidValues) || avoidValues.length === 0) return [];
+  const cleaned = avoidValues
+    .filter((v) => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim().slice(0, 40))
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .slice(0, 60);
+  if (cleaned.length === 0) return [];
+  return [
+    '',
+    'PREVIOUSLY USED VALUES — do not repeat these, pick different ones:',
+    cleaned.map((v) => `- ${v}`).join('\n')
+  ];
+}
+
+function generateFullFormSuggestion(fields, pageMeta, options = {}) {
   const fieldLines = fields.map((f) => {
     const pos = f.position ? ` position=[${String(f.position).slice(0, 160)}]` : '';
     const base =
@@ -509,6 +568,11 @@ function generateFullFormSuggestion(fields, pageMeta) {
     }
     return base;
   });
+
+  // Variation anchor: without it the model returns its single most "typical"
+  // answer every time, so repeated runs produce identical data.
+  const persona = options.randomize ? buildRandomPersona() : null;
+
   return [
     'You are an AI form-filling assistant. Fill EVERY field in the list below with concise, realistic values.',
     '',
@@ -517,6 +581,8 @@ function generateFullFormSuggestion(fields, pageMeta) {
     '',
     'Fields:',
     ...fieldLines,
+    ...(persona ? personaLines(persona) : []),
+    ...avoidLines(options.avoidValues),
     '',
     'STRICT OUTPUT RULES:',
     '1. Return ONLY a single valid JSON object mapping each uid to its fill value.',
@@ -593,14 +659,19 @@ async function handleBatchFill(payload, sendResponse) {
   }
   // Cap batch size to keep prompts bounded.
   const capped = fields.slice(0, 40);
+  const randomize = payload?.randomize !== false;
   try {
     const result = await callLLM({
       provider,
       apiKey,
       model,
       apiBaseUrl,
-      prompt: generateFullFormSuggestion(capped, payload?.page),
-      temperature: 0.75,
+      prompt: generateFullFormSuggestion(capped, payload?.page, {
+        randomize,
+        avoidValues: payload?.avoidValues
+      }),
+      // Higher temperature when randomising so runs diverge more visibly.
+      temperature: randomize ? 1.0 : 0.75,
       maxOutputTokens: 2048
     });
     if (!result.ok) {

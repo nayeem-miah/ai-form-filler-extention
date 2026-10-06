@@ -1522,7 +1522,46 @@
     return setTextValue(field, strValue) !== false;
   }
 
-  // ---------- Single fill ----------
+  // ---------- Variation memory (developer form testing) ----------
+// Keeps the last two runs' generated values so consecutive Fill All runs
+// produce different data instead of the AI's single "typical" answer.
+// Kept in memory only — nothing is persisted or sent anywhere but the LLM call.
+let recentValues = [];
+let randomizeValues = true;
+const MAX_REMEMBERED = 120;
+
+// Respect the user's Options toggle (defaults to on).
+function loadRandomizePreference() {
+  try {
+    chrome.storage.sync.get('randomize', (result) => {
+      if (chrome.runtime.lastError) return;
+      randomizeValues = !result || result.randomize !== false;
+    });
+  } catch {
+    /* default to randomising */
+  }
+}
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes && Object.hasOwn(changes, 'randomize')) {
+      randomizeValues = changes.randomize.newValue !== false;
+    }
+  });
+} catch {
+  /* storage unavailable — keep the default */
+}
+loadRandomizePreference();
+
+function rememberValues(values) {
+  const fresh = [];
+  for (const v of Object.values(values)) {
+    if (typeof v === 'string' && v.trim()) fresh.push(v.trim());
+  }
+  // Two runs deep: avoids immediate repeats without growing forever.
+  recentValues = [...fresh, ...recentValues].slice(0, MAX_REMEMBERED);
+}
+
+// ---------- Single fill ----------
 
   async function onSingleFillClick() {
     if (!activeField || isSingleLoading) return;
@@ -1702,10 +1741,13 @@
     let response;
     try {
       setFillAllState('loading', '⏳ Generating…');
-      response = await sendToBackground({
-        type: 'AIFF_FILL_ALL',
+response = await sendToBackground({
+type: 'AIFF_FILL_ALL',
         payload: {
           fields,
+          randomize: randomizeValues,
+          // Previously generated values, so the model can avoid repeating them
+          avoidValues: recentValues.slice(0, 60),
           page: { title: document.title || '', url: location.href || '' }
         }
       });
@@ -1744,6 +1786,8 @@
       let filled = 0;
       const skippedLabels = [];
       const fallbackLabels = [];
+      // Remember what we just generated so the next run can avoid it.
+      if (randomizeValues) rememberValues(values);
       for (const [uid, text] of Object.entries(values)) {
         const el = elementByUid.get(uid);
         if (!el || !el.isConnected) continue;
