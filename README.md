@@ -18,8 +18,10 @@ dropdowns, and modern React/Tailwind custom dropdowns.
 
 **Multi-provider**
 
-- **Google Gemini** — 13 models including `gemini-2.5-flash` (default), the
-  Gemini 3.x Flash family, `gemini-2.5-pro`, `gemini-1.5-*`
+- **Google Gemini** — 13 models. Default: `gemini-3.5-flash-lite`. Also includes
+  `gemini-2.5-flash`, the Gemini 3.x Flash family (`gemini-3.8-flash` down to
+  `gemini-3-flash`), Flash-Lite variants, `gemini-2.5-pro`, `gemini-3.1-pro-preview`
+  and the `gemini-1.5-*` legacy entries
 - **OpenAI (Official)** — `gpt-4o-mini` (default), `gpt-4o`, `gpt-3.5-turbo`
 - **OpenAI Compatible / Custom API** — OpenRouter, Groq, Together AI, DeepSeek,
   Ollama, LM Studio, vLLM, or any server exposing `POST {base}/chat/completions`
@@ -43,8 +45,11 @@ the change. Contenteditable / rich-text editors are supported too.
 
 **Other details**
 
-- Keys stored in `chrome.storage.sync`; all API calls run in the service worker
-  (never from page scripts)
+- All API calls run in the service worker, never from page scripts
+- **Randomize values** toggle — a fresh persona anchor per run, so repeated runs
+  return different data (see [Privacy & data storage](#privacy-and-data-storage))
+- Draggable ⚡ button — grab it anywhere; the position is remembered per device
+- Styled toast notifications instead of blocking browser dialogs
 - Dark / light theme, minimal Vercel-style settings UI
 - **In-app update checker** — compares your installed version against the latest
   GitHub release
@@ -67,10 +72,11 @@ the change. Contenteditable / rich-text editors are supported too.
 
 ### Configure your API key
 
-1. Click the extension icon, then **Options** (or right-click → Options).
+1. Click the extension icon in the toolbar (this opens the settings page directly).
 2. Choose a **Provider**.
-3. Paste your key, pick a **Model**, and click **Save**.
-4. Click **Test** to confirm the connection works.
+3. Paste your key, pick a **Model**, and click **Save & Test** — this saves your
+   settings and verifies the connection in one step.
+4. A green confirmation means you are ready to fill forms.
 
 Get a key:
 
@@ -82,9 +88,48 @@ Get a key:
 | Groq | <https://console.groq.com/keys> |
 | DeepSeek | <https://platform.deepseek.com/api_keys> |
 
-> **Your key never leaves your browser.** It is saved to `chrome.storage.sync` and
-> sent only to the provider endpoint you selected, from the extension's service
-> worker. Do not paste keys into chat, issues, or commits.
+> **Your key is never sent anywhere except the provider you selected.** It is read
+> only by the extension's service worker, which sends it to that provider's API to
+> make your request. It is never exposed to page scripts and never logged.
+> Do not paste keys into chat, issues, or commits.
+
+---
+
+## Privacy and data storage
+
+This section is deliberately precise, because the difference matters.
+
+**Where your key is stored**
+
+Keys are saved with `chrome.storage.sync`. Two consequences matter:
+
+1. **They are not end-to-end encrypted.** Chrome syncs this data to the Google
+   account attached to your browser profile. Anyone who can access that profile —
+   including on any device you are signed into — can read the stored value.
+2. **`sync` means "across your devices", not "local only".** Sign into the same
+   Google account on another machine and your settings come with you (after you
+   load the extension there, since unpacked extensions themselves are not synced).
+
+What is **not** synced: the ⚡ button position (kept in `chrome.storage.local`) and
+the in-memory list of recently used values behind Randomize, which never leaves the
+tab and is discarded on reload.
+
+**If you prefer keys on a single machine**, they can be moved to
+`chrome.storage.local` so they never sync — the trade-off is re-entering them on
+each new device.
+
+**What goes where**
+
+| Data | Sent to |
+| --- | --- |
+| Your API key | The provider you selected, from the service worker |
+| Field labels, placeholders, surrounding form text, page title and URL | The same provider, inside the prompt, so it can generate realistic values |
+
+There is no analytics or telemetry. Declared host permissions are limited to the
+provider APIs plus `api.github.com` for the update check; custom API hosts are
+requested on demand, only when you enter one.
+
+---
 
 ### Using the OpenAI-compatible option
 
@@ -121,6 +166,39 @@ position is remembered per device.
 **Fields that are skipped:** `password`, `file`, `hidden`, `checkbox`, `radio`,
 `submit`, `button`, `reset`, `image`, `range`, `color`, plus disabled and read-only
 inputs.
+
+---
+
+## Options
+
+The settings page is intentionally small. Everything it contains:
+
+| Control | What it does |
+| --- | --- |
+| Theme toggle | Light / dark. Saved, and initialised from your OS preference |
+| **Provider** | Gemini, OpenAI, or a custom OpenAI-compatible endpoint |
+| **Base URL** + **Model** | Shown only for the custom provider |
+| **API Key** | Per provider, so switching providers does not lose your other keys |
+| Eye icon | Shows or hides the key while typing |
+| **Save & Test** | Saves everything, then verifies the connection — one click |
+| **Remove** | Clears the key for the active provider only |
+| **Randomize values** | See below |
+| **Check updates** | Compares your version against the latest GitHub release |
+
+### Randomize values
+
+**On (default)** — each run gets a random but internally consistent anchor (a person,
+a company, an industry, a city, a project), and the previous run's values are sent as
+a "do not repeat these" list. Every ✨ and ⚡ run therefore returns different names,
+numbers and text, which is what you usually want when testing a form or seeding demo
+data.
+
+**Off** — no anchor is injected and the output temperature is lower, so the model
+falls back to its most typical answer. Use this when you want predictable values, or
+when filling a real form where you do not want existing entries overwritten.
+
+Dropdowns are unaffected either way: their value must come from the fixed option list,
+so they stay the same by design.
 
 ---
 
