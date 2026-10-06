@@ -396,6 +396,69 @@ async function callOpenAICompatible({
 }
 
 // Provider router — single entry point for all LLM calls.
+// Some providers (OpenRouter free tiers, Groq on metered plans) reject the
+// whole request when the requested max_tokens exceeds the remaining balance
+// (HTTP 402). Detect that and retry once with a smaller budget.
+const INSUFFICIENT_CREDITS_RE =
+  /insufficient_credits|requires more credits|can only afford|payment required|402/i;
+
+function isCreditError(result) {
+  return Boolean(result && !result.ok && INSUFFICIENT_CREDITS_RE.test(String(result.detail || '')));
+}
+
+// Reasoning models can burn the whole budget on thinking tokens and return
+// nothing (finish_reason: length). Retry once with a bigger budget.
+function isBudgetStarved(result) {
+  return Boolean(
+    result &&
+      !result.ok &&
+      result.error === 'EMPTY_RESPONSE' &&
+      /finish_reason:\s*length|no text \(finish_reason: length\)/i.test(String(result.detail || ''))
+  );
+}
+
+// Retry-friendly hint when the model ran out of output budget.
+function emptyTextDetail(model, finishReason) {
+  if (/length|max_tokens/i.test(String(finishReason || ''))) {
+    return (
+      `${model} ran out of output budget before finishing, so no text was returned ` +
+      '(finish_reason: length). Reasoning models spend part of the budget thinking. ' +
+      'Try a model with a larger context, or a less expensive one.'
+    );
+  }
+  return `${model} returned no text (finish_reason: ${finishReason}).`;
+}
+
+async function callLLMWithCreditFallback(args) {
+  const requested = typeof args.maxOutputTokens === 'number' ? args.maxOutputTokens : 1024;
+  let first = await callLLM(args);
+
+  // 1) Balance too low for the requested budget -> halve and retry once.
+  if (isCreditError(first)) {
+    const reduced = Math.max(256, Math.floor(requested / 2));
+    if (reduced < requested) {
+      first = await callLLM({ ...args, maxOutputTokens: reduced });
+    } else {
+      return {
+        ...first,
+        detail:
+          `${first.detail}\n\nYour provider balance is too low for this request. ` +
+          'Add credits, or pick a cheaper or free model in Settings.'
+      };
+    }
+  }
+
+  // 2) Model returned nothing because it ran out of budget -> retry bigger.
+  if (isBudgetStarved(first)) {
+    const bigger = Math.min(8192, Math.max(1024, requested * 4));
+if (bigger > requested) {
+      return callLLM({ ...args, maxOutputTokens: bigger });
+    }
+  }
+
+  return first;
+}
+
 async function callLLM({
   provider,
   apiKey,
@@ -630,7 +693,7 @@ async function handleSingleFill(context, sendResponse, request) {
   // stored preference when the flag is absent.
   const randomize = request && typeof request.randomize === 'boolean' ? request.randomize : true;
   try {
-    const result = await callLLM({
+    const result = await callLLMWithCreditFallback({
       provider,
       apiKey,
       model,
@@ -641,7 +704,9 @@ async function handleSingleFill(context, sendResponse, request) {
       }),
       // Higher temperature when randomising so clicks diverge visibly.
       temperature: randomize ? 1.0 : 0.85,
-      maxOutputTokens: 512
+      // 512 leaves room for reasoning models, whose thinking tokens count
+      // against the budget and otherwise return empty content.
+      maxOutputTokens: 768
     });
     if (!result.ok) {
       sendResponse(result);
@@ -680,7 +745,7 @@ async function handleBatchFill(payload, sendResponse) {
   const capped = fields.slice(0, 40);
   const randomize = payload?.randomize !== false;
   try {
-    const result = await callLLM({
+    const result = await callLLMWithCreditFallback({
       provider,
       apiKey,
       model,
@@ -691,7 +756,9 @@ async function handleBatchFill(payload, sendResponse) {
       }),
       // Higher temperature when randomising so runs diverge more visibly.
       temperature: randomize ? 1.0 : 0.75,
-      maxOutputTokens: 2048
+      // 1536 is enough for a 40-field JSON response without tripping the
+      // credit checks on free tiers (callLLM halves this automatically on 402).
+      maxOutputTokens: 1536
     });
     if (!result.ok) {
       sendResponse(result);
@@ -783,14 +850,16 @@ async function handleTest(request, sendResponse) {
     return;
   }
   try {
-    const result = await callLLM({
+    const result = await callLLMWithCreditFallback({
       provider,
       apiKey: keyToTest,
       model: modelToTest,
       apiBaseUrl: baseUrlToTest,
       prompt: 'Reply with the single word: ok',
       temperature: 0,
-      maxOutputTokens: 16
+      // 16 was too small: reasoning models spend the budget on thinking
+      // tokens and return empty content (finish_reason: length).
+      maxOutputTokens: 512
     });
     if (!result.ok) {
       sendResponse(result);

@@ -326,6 +326,20 @@ function friendlyApiError(detail, providerLabel) {
       message: `${provider} returned 404. Check the model name and the API Base URL in Settings.`
     };
   }
+  if (/\b402\b|insufficient_credits|requires more credits|can only afford|payment required/i.test(raw)) {
+    return {
+      title: 'Out of credits',
+      message:
+        `${provider} has no balance left for this request. Add credits in your ${provider} account, or switch to a free model (for example one ending in :free).`
+    };
+  }
+  if (/finish_reason:\s*length|ran out of output budget/i.test(raw)) {
+    return {
+      title: 'Response was cut off',
+      message:
+        'The model used up its output budget before producing an answer. Try a model with a larger context window, or a less expensive one.'
+    };
+  }
   if (/\b429\b/.test(raw)) {
     return {
       title: 'Rate limit reached',
