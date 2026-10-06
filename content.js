@@ -112,6 +112,7 @@
       singleBtn.textContent = '✨ AI Fill';
       singleBtn.addEventListener('mousedown', (e) => e.preventDefault());
       singleBtn.addEventListener('click', onSingleFillClick);
+      trackPointerOnButton(singleBtn);
       shadow.appendChild(singleBtn);
     } else {
       singleBtn = shadow.querySelector('[data-aiff-single]');
@@ -753,11 +754,39 @@
     }
   }
 
+  // The AI Fill button sits just outside the field's box, so travelling from
+// the field to the button always fires pointerout first. A grace window plus
+// pointer tracking on the button itself keeps it reachable and clickable.
+  let pointerOnButton = false;
+
+  function cancelHide() {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  }
+
   function scheduleHide() {
-    if (hideTimer) clearTimeout(hideTimer);
+    cancelHide();
     hideTimer = setTimeout(() => {
-      if (!isSingleLoading) hideSingleButton();
-    }, 200);
+      hideTimer = null;
+      if (isSingleLoading || pointerOnButton) return;
+      hideSingleButton();
+    }, 350);
+  }
+
+  function trackPointerOnButton(btn) {
+    if (!btn) return;
+    btn.addEventListener('pointerenter', () => {
+      pointerOnButton = true;
+      cancelHide();
+    });
+    btn.addEventListener('pointerleave', () => {
+      pointerOnButton = false;
+      // Keep it visible if the field is still focused; otherwise dismiss.
+      if (activeField && document.activeElement === activeField) return;
+      scheduleHide();
+    });
   }
 
   function setSingleState(state, text) {
@@ -1889,6 +1918,9 @@ type: 'AIFF_FILL_ALL',
       // Moving within the same field should not dismiss the button.
       const to = e.relatedTarget;
       if (to && e.target.contains && e.target.contains(to)) return;
+      // Shadow-DOM events retarget to our host; moving onto the button must
+      // never dismiss it. The button's own pointerenter cancels the timer.
+      if (to && host && (to === host || (host.contains && host.contains(to)))) return;
       scheduleHide();
     },
     true
