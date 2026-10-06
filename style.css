@@ -189,7 +189,7 @@ html[data-theme="dark"] {
 }
 
 .aiff-hint code {
-  background: var(--aiff-chip-bg);
+  background: var(--aiff-hover-bg);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 11.5px;
@@ -377,7 +377,10 @@ html[data-theme="dark"] {
   width: 100%;
   max-width: 440px;
   max-height: 88vh;
-  overflow-y: auto;
+  /* Both axes must be explicit. Leaving the x axis as the default
+     "visible" makes it compute to "auto" once y scrolls, which renders
+     a stray horizontal scrollbar. */
+  overflow: hidden auto;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 14px;
@@ -449,13 +452,14 @@ html[data-theme="dark"] {
 }
 
 .aiff-author-links a {
-  color: var(--aiff-muted);
-  text-decoration: none;
+  color: var(--aiff-indigo);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 500;
 }
 
 .aiff-author-links a:hover {
   color: var(--text-main);
-  text-decoration: underline;
 }
 
 .aiff-modal .aiff-credit {
