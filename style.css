@@ -380,6 +380,50 @@ html[data-theme="dark"] {
   margin-top: 12px;
 }
 
+/* Detected page shortcuts under the feedback textarea */
+.aiff-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.aiff-links[hidden] {
+  display: none !important;
+}
+
+.aiff-links-lead {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--aiff-muted);
+  margin-right: 2px;
+}
+
+.aiff-link-chip {
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  background: var(--aiff-hover-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.aiff-link-chip:hover {
+  background: var(--aiff-input-border);
+  border-color: var(--aiff-muted);
+  transform: translateY(-1px);
+}
+
+.aiff-link-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--aiff-focus-ring);
+}
+
 .aiff-btn-link {
   display: inline-flex;
   align-items: center;

@@ -18,6 +18,26 @@ const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
 const WEB3FORMS_ACCESS_KEY = 'YOUR_WEB3FORMS_ACCESS_KEY';
 const REPO_ISSUES_URL = 'https://github.com/nayeem-miah/ai-form-filler-extention/issues/new';
 
+// ---------------------------------------------------------------------------
+// Feedback page shortcuts
+// ---------------------------------------------------------------------------
+// When your feedback text mentions one of these keywords, a clickable chip
+// appears under the textarea that opens the matching page in a new tab.
+// EDIT THIS to match your own routes — add, remove or retarget entries freely.
+//
+//   label    -> text shown on the chip
+//   keywords -> matched against the feedback text (case-insensitive)
+//   url      -> opened in a new tab when the chip is clicked
+const PAGE_LINKS = [
+  { label: 'Contract', url: 'https://quick-bus-bd.web.app/contract', keywords: ['contract', 'agreement'] },
+  { label: 'Support', url: 'https://quick-bus-bd.web.app/support', keywords: ['support', 'help'] },
+  { label: 'Invoices', url: 'https://quick-bus-bd.web.app/invoices', keywords: ['invoice', 'invoices'] },
+  { label: 'Clients', url: 'https://quick-bus-bd.web.app/clients', keywords: ['client', 'clients'] },
+  { label: 'Items', url: 'https://quick-bus-bd.web.app/items', keywords: ['item', 'items'] },
+  { label: 'Checkout', url: 'https://quick-bus-bd.web.app/checkout', keywords: ['checkout', 'cart'] },
+  { label: 'Settings', url: 'https://quick-bus-bd.web.app/settings', keywords: ['settings', 'config'] }
+];
+
 const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
@@ -112,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const feedbackEmail = document.getElementById('feedbackEmail');
   const feedbackMessage = document.getElementById('feedbackMessage');
   const feedbackStatus = document.getElementById('feedbackStatus');
+  const feedbackLinks = document.getElementById('feedbackLinks');
   const githubIssueLink = document.getElementById('githubIssueLink');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -703,6 +724,68 @@ function requestHostPermission(url, onResult) {
       updateBtn.textContent = 'Check for Updates';
     }
   });
+
+  // ---- Feedback page shortcuts (keyword -> clickable chip) ----
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /** Entries in PAGE_LINKS whose keywords appear in the text (word-boundary). */
+  function detectPageLinks(text) {
+    const haystack = ' ' + String(text || '').toLowerCase().replace(/\s+/g, ' ') + ' ';
+    const found = [];
+    for (const entry of PAGE_LINKS) {
+      const hit = (entry.keywords || []).some((word) => {
+        const pattern = new RegExp('(^|[^a-z0-9])' + escapeRegExp(word) + '([^a-z0-9]|$)', 'i');
+        return pattern.test(haystack);
+      });
+      if (hit) found.push(entry);
+    }
+    return found;
+  }
+
+  function openExternal(url) {
+    try {
+      // Extension pages can create tabs without the "tabs" permission.
+      chrome.tabs.create({ url, active: true });
+    } catch {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  function renderFeedbackLinks() {
+    if (!feedbackLinks) return;
+    const matches = detectPageLinks(feedbackMessage.value);
+    feedbackLinks.textContent = '';
+
+    if (matches.length === 0) {
+      feedbackLinks.hidden = true;
+      return;
+    }
+    feedbackLinks.hidden = false;
+
+    const lead = document.createElement('span');
+    lead.className = 'aiff-links-lead';
+    lead.textContent = 'Jump to:';
+    feedbackLinks.appendChild(lead);
+
+    for (const entry of matches) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'aiff-link-chip';
+      chip.textContent = entry.label;
+      chip.title = `Open ${entry.url} in a new tab`;
+      chip.addEventListener('mousedown', (e) => e.preventDefault());
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        openExternal(entry.url);
+      });
+      feedbackLinks.appendChild(chip);
+    }
+  }
+
+  feedbackMessage.addEventListener('input', renderFeedbackLinks);
 
   // ---- Feedback form (Web3Forms) ----
 
