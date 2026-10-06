@@ -80,9 +80,292 @@
     }
     .aiff-fill-all:active { cursor: grabbing; }
     .aiff-fill-all:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(24,121,78,0.55); }
+
+    /* ---- Toast notifications ---- */
+    .aiff-toasts {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 380px;
+      pointer-events: none;
+    }
+    .aiff-toast {
+      pointer-events: auto;
+      display: flex;
+      gap: 12px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-left: 4px solid #3e63dd;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(16, 24, 40, 0.14);
+      animation: aiff-toast-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+    }
+    .aiff-toast.is-leaving { animation: aiff-toast-out 0.18s ease forwards; }
+    @keyframes aiff-toast-in {
+      from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes aiff-toast-out {
+      to { opacity: 0; transform: translateY(-6px) scale(0.97); }
+    }
+    .aiff-toast-icon {
+      flex: 0 0 20px;
+      width: 20px;
+      height: 20px;
+      margin-top: 1px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .aiff-toast-body { flex: 1; min-width: 0; }
+    .aiff-toast-title {
+      margin: 0 0 3px;
+      font-size: 13.5px;
+      font-weight: 650;
+      color: #101828;
+      line-height: 1.35;
+    }
+    .aiff-toast-msg {
+      margin: 0;
+      font-size: 12.5px;
+      color: #5b6474;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .aiff-toast-action {
+      margin-top: 10px;
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      background: #171717;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    .aiff-toast-action:hover { opacity: 0.88; }
+    .aiff-toast-close {
+      flex: 0 0 auto;
+      align-self: flex-start;
+      padding: 0;
+      font-size: 16px;
+      line-height: 1;
+      color: #98a2b3;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+    .aiff-toast-close:hover { color: #101828; }
+
+    .aiff-toast-error { border-left-color: #d13415; }
+    .aiff-toast-error .aiff-toast-icon { background: #d13415; }
+    .aiff-toast-success { border-left-color: #18794e; }
+    .aiff-toast-success .aiff-toast-icon { background: #18794e; }
+    .aiff-toast-warn { border-left-color: #b54708; }
+    .aiff-toast-warn .aiff-toast-icon { background: #b54708; }
+    .aiff-toast-info { border-left-color: #3e63dd; }
+    .aiff-toast-info .aiff-toast-icon { background: #3e63dd; }
   `;
 
-  // ---------- Shadow DOM setup ----------
+  // ---------- Toast notifications ----------
+
+const TOAST_ICON = { error: '!', success: '✓', warn: '!', info: 'i' };
+
+function toastContainer() {
+  ensureUI();
+  if (!shadow) return null;
+  let box = shadow.querySelector('[data-aiff-toasts]');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'aiff-toasts';
+    box.setAttribute('data-aiff-toasts', 'true');
+    shadow.appendChild(box);
+  }
+  return box;
+}
+
+/**
+ * showToast({ kind, title, message, duration, action })
+ * kind: 'error' | 'success' | 'warn' | 'info'
+ */
+function showToast(options) {
+  const cfg = options || {};
+  const kind = TOAST_ICON[cfg.kind] ? cfg.kind : 'info';
+  const box = toastContainer();
+  if (!box) return;
+
+  const toast = document.createElement('div');
+  toast.className = `aiff-toast aiff-toast-${kind}`;
+
+  const icon = document.createElement('div');
+  icon.className = 'aiff-toast-icon';
+  icon.textContent = TOAST_ICON[kind];
+  toast.appendChild(icon);
+
+  const body = document.createElement('div');
+  body.className = 'aiff-toast-body';
+
+  const title = document.createElement('p');
+  title.className = 'aiff-toast-title';
+  title.textContent = cfg.title || 'AI Form Filler';
+  body.appendChild(title);
+
+  if (cfg.message) {
+    const msg = document.createElement('p');
+    msg.className = 'aiff-toast-msg';
+    msg.textContent = String(cfg.message);
+    body.appendChild(msg);
+  }
+
+  if (cfg.action && cfg.action.label) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'aiff-toast-action';
+    btn.textContent = cfg.action.label;
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      dismissToast(toast);
+      try {
+        cfg.action.onClick();
+      } catch {
+        /* noop */
+      }
+    });
+    body.appendChild(btn);
+  }
+
+  toast.appendChild(body);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'aiff-toast-close';
+  close.setAttribute('aria-label', 'Dismiss');
+  close.textContent = '×';
+  close.addEventListener('mousedown', (e) => e.preventDefault());
+  close.addEventListener('click', () => dismissToast(toast));
+  toast.appendChild(close);
+
+  box.appendChild(toast);
+
+  // Cap the stack so repeated failures don't cover the page.
+  const all = [...box.querySelectorAll('.aiff-toast:not(.is-leaving)')];
+  if (all.length > 3) dismissToast(all[0]);
+
+  const duration = typeof cfg.duration === 'number' ? cfg.duration : kind === 'error' ? 9000 : 4500;
+  if (duration > 0) setTimeout(() => dismissToast(toast), duration);
+}
+
+function dismissToast(toast) {
+  if (!toast || !toast.parentNode) return;
+  toast.classList.add('is-leaving');
+  setTimeout(() => {
+    try {
+      toast.remove();
+    } catch {
+      /* noop */
+    }
+  }, 200);
+}
+
+// ---------- Friendly error mapping ----------
+
+/**
+ * Turns raw provider errors into an actionable title + message.
+ * Falls back to the original detail when nothing matches.
+ */
+function friendlyApiError(detail, providerLabel) {
+  const raw = String(detail || '').trim();
+  const provider = providerLabel || 'the provider';
+
+  if (!raw) {
+    return {
+      title: 'Request failed',
+      message: 'The provider did not return an error message. Check your settings and try again.'
+    };
+  }
+
+  if (/\b401\b/.test(raw)) {
+    return {
+      title: 'API key not accepted',
+      message:
+        `${provider} rejected the key (401). This usually means the key is invalid, expired, or not saved yet. Open Settings and re-save it.`
+    };
+  }
+  if (/\b403\b/.test(raw)) {
+    return {
+      title: 'Access denied',
+      message:
+        `${provider} refused this request (403). The key may lack access to that model, or the account has no quota left.`
+    };
+  }
+  if (/\b404\b/.test(raw)) {
+    return {
+      title: 'Model or URL not found',
+      message: `${provider} returned 404. Check the model name and the API Base URL in Settings.`
+    };
+  }
+  if (/\b429\b/.test(raw)) {
+    return {
+      title: 'Rate limit reached',
+      message: 'Too many requests. Wait a minute, then try again — or use a model with a higher quota.'
+    };
+  }
+  if (/\b5\d\d\b/.test(raw) || /overloaded|unavailable|internal error/i.test(raw)) {
+    return {
+      title: 'Provider temporarily unavailable',
+      message: 'The AI service returned a server error. Try again in a few moments.'
+    };
+  }
+  if (/failed to fetch|networkerror|network error|load failed/i.test(raw)) {
+    return {
+      title: 'No connection',
+      message: 'Could not reach the provider. Check your internet connection, then retry.'
+    };
+  }
+  if (/context invalidated|extension context/i.test(raw)) {
+    return {
+      title: 'Extension reloaded',
+      message: 'Refresh this page (Ctrl+R) so the extension can reconnect, then try again.'
+    };
+  }
+  if (/auth cookie|org id/i.test(raw)) {
+    return {
+      title: 'Key not sent correctly',
+      message:
+        `${provider} did not receive a usable API key. Save the key again in Settings, and make sure the provider matches the key type.`
+    };
+  }
+  if (/did not return valid json|BAD_JSON|valid JSON/i.test(raw)) {
+    return {
+      title: 'Unexpected AI response',
+      message: 'The model replied with something other than the expected format. Try again.'
+    };
+  }
+
+  // Unknown: show a trimmed raw message so nothing is silently swallowed.
+  return { title: 'Something went wrong', message: raw.slice(0, 300) };
+}
+
+function openOptionsPage() {
+  try {
+    chrome.runtime.sendMessage({ type: 'AIFF_OPEN_OPTIONS' });
+  } catch {
+    /* ignore */
+  }
+}
+
+// ---------- Shadow DOM setup ----------
 
   function ensureUI() {
     if (host && shadow && singleBtn && fillAllBtn) return;
@@ -838,17 +1121,14 @@
       alertContextInvalidated();
       return;
     }
-    const go = confirm(
-      'No API key is configured.\n\nClick OK to open the Options page, pick a provider (Google Gemini or OpenAI), and add your key.'
-    );
-    if (go) {
-      try {
-        chrome.runtime.sendMessage({ type: 'AIFF_OPEN_OPTIONS' });
-      } catch (err) {
-        if (isInvalidationError(err)) alertContextInvalidated();
-        /* otherwise: options page fallback handled in background */
-      }
-    }
+    showToast({
+      kind: 'warn',
+      title: 'No API key configured',
+      message:
+        'Pick a provider (Google Gemini, OpenAI, or a compatible API) and add your key to start filling forms.',
+      duration: 0,
+      action: { label: 'Open Settings', onClick: openOptionsPage }
+    });
   }
 
   // ---------- Extension context lifecycle ----------
@@ -873,9 +1153,23 @@
   }
 
   function alertContextInvalidated() {
-    alert(
-      'The extension was reloaded or updated, so this page lost its connection to it.\n\nPlease refresh this page (Ctrl+R / Cmd+R) and try again — no settings were lost.'
-    );
+    showToast({
+      kind: 'warn',
+      title: 'Extension reloaded',
+      message:
+        'This page lost its connection when the extension reloaded or updated. Refresh the page, then try again — your settings are safe.',
+      duration: 0,
+      action: {
+        label: 'Refresh page',
+        onClick: () => {
+          try {
+            location.reload();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    });
   }
 
   // Drop-in replacement for chrome.runtime.sendMessage that translates
@@ -1614,14 +1908,21 @@ function rememberValues(values) {
 
     let response;
     try {
-      response = await sendToBackground({ type: 'AIFF_FILL', context });
+      response = await sendToBackground({
+type: 'AIFF_FILL',
+        context,
+        // Same variation controls as batch fill, so repeated clicks vary too.
+        randomize: randomizeValues,
+        avoidValues: recentValues.slice(0, 20)
+      });
     } catch (err) {
       if (isInvalidationError(err)) {
         handleInvalidatedSingle();
         return;
       }
       setSingleState('error', '⚠️ No response');
-      alert(`Extension error: ${(err && err.message) || err}`);
+      const friendly = friendlyApiError((err && err.message) || err);
+      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
       return;
     }
 
@@ -1636,9 +1937,9 @@ function rememberValues(values) {
         promptForApiKey();
         return;
       }
-      const detail = response && response.detail ? `\n\n${response.detail}` : '';
-      setSingleState('error', '⚠️ Failed — retry?');
-      alert(`AI Fill failed.${detail}`);
+      setSingleState('error', '⚠️ Failed');
+      const friendly = friendlyApiError(response && response.detail);
+      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
       return;
     }
 
@@ -1650,27 +1951,42 @@ function rememberValues(values) {
           ? response.value
           : response.text;
       const applied = await setFieldValue(field, fillText);
+      // Remember successful single fills so the next click can avoid repeating.
+      if (applied && randomizeValues && typeof fillText === 'string' && fillText.trim()) {
+        rememberValues({ single: fillText.trim() });
+      }
       if (!applied) {
         const kind = fieldKind(field);
         const isDropdown = field.tagName.toLowerCase() === 'select' || kind === 'combobox';
-        const reason = lastFillInfo.reason ? ` (reason: ${lastFillInfo.reason})` : '';
         setSingleState('error', '⚠️ No match');
-        alert(
-          isDropdown
-            ? `No existing dropdown option matches "${String(fillText).slice(0, 120)}"${reason}. Nothing was changed — only options already in the list can be selected. Tip: open DevTools console and look for [AIFF] logs.`
-            : 'Could not fill this field. Nothing was changed.'
-        );
+        if (isDropdown) {
+          showToast({
+            kind: 'warn',
+            title: 'No matching option',
+            message: `“${String(fillText).slice(0, 80)}” isn’t in this dropdown, so nothing was changed. Only options already in the list can be selected.`,
+            duration: 0
+          });
+        } else {
+          showToast({
+            kind: 'warn',
+            title: 'Nothing was filled',
+            message: 'This field could not be updated. Try again, or pick a different model in Settings.',
+            duration: 0
+          });
+        }
         setTimeout(() => {
           if (activeField === field) setSingleState('idle');
         }, 2000);
         return;
       }
       if (lastFillInfo.fallback) {
-        const chosen = lastFillInfo.chosen ? `"${lastFillInfo.chosen}"` : 'the first available option';
+        const chosen = lastFillInfo.chosen ? `“${lastFillInfo.chosen}”` : 'the first available option';
         setSingleState('success', '✓ Closest match');
-        alert(
-          `"${String(fillText).slice(0, 120)}" isn't in this dropdown's options, so ${chosen} was selected instead.`
-        );
+        showToast({
+          kind: 'info',
+          title: 'Closest option selected',
+          message: `“${String(fillText).slice(0, 80)}” isn’t available here, so ${chosen} was selected instead.`
+        });
       } else {
         setSingleState('success');
       }
@@ -1762,7 +2078,13 @@ function rememberValues(values) {
     const { fields, elementByUid } = await collectFillableFields();
     if (fields.length === 0) {
       setFillAllState('error', '⚠️ No fields found');
-      alert('No visible, fillable fields (inputs, textareas, or dropdowns) were found on this page.');
+      showToast({
+        kind: 'warn',
+        title: 'No fillable fields found',
+        message:
+          'This page has no visible text inputs, textareas, or dropdowns. Password, file, and hidden fields are skipped by design.',
+        duration: 6000
+      });
       setTimeout(() => setFillAllState('idle'), 2000);
       return;
     }
@@ -1786,7 +2108,8 @@ type: 'AIFF_FILL_ALL',
         return;
       }
       setFillAllState('error', '⚠️ No response');
-      alert(`Extension error: ${(err && err.message) || err}`);
+      const friendly = friendlyApiError((err && err.message) || err);
+      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
       setTimeout(() => setFillAllState('idle'), 2000);
       return;
     }
@@ -1803,9 +2126,9 @@ type: 'AIFF_FILL_ALL',
         setTimeout(() => setFillAllState('idle'), 2500);
         return;
       }
-      const detail = response && response.detail ? `\n\n${response.detail}` : '';
       setFillAllState('error', '⚠️ Fill-all failed');
-      alert(`Fill All Fields failed.${detail}`);
+      const friendly = friendlyApiError(response && response.detail);
+      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
       setTimeout(() => setFillAllState('idle'), 2500);
       return;
     }
@@ -1857,27 +2180,39 @@ type: 'AIFF_FILL_ALL',
       const skipped = skippedLabels.length;
       if (filled === 0) {
         setFillAllState('error', '⚠️ Nothing filled');
-        alert(
-          skipped > 0
-            ? `Nothing filled. Skipped dropdowns: ${skippedLabels.slice(0, 5).join('; ')}. Only existing options can be selected.`
-            : 'The model returned no usable values for the detected fields.'
-        );
+        showToast({
+          kind: 'error',
+          title: 'Nothing was filled',
+          message:
+            skipped > 0
+              ? `No field could be updated. ${skippedLabels.slice(0, 3).join('; ')}.`
+              : 'The model did not return usable values for the fields on this page. Try again or pick another model in Settings.',
+          duration: 0
+        });
       } else if (skipped > 0) {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
-        alert(
-          `${filled} field${filled === 1 ? '' : 's'} filled. ${skipped} dropdown${skipped === 1 ? '' : 's'} skipped (no options available to select). Skipped: ${skippedLabels.slice(0, 5).join('; ')}.${
-            fallbackLabels.length
-              ? `\n\nNote — ${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} filled with the closest existing option instead:\n${fallbackLabels.slice(0, 5).join('\n')}`
-              : ''
-          }`
-        );
+        showToast({
+          kind: 'warn',
+          title: `Filled ${filled} of ${filled + skipped} fields`,
+          message: `${skipped} dropdown${skipped === 1 ? '' : 's'} had no selectable options: ${skippedLabels.slice(0, 3).join('; ')}.`,
+          duration: 0
+        });
       } else if (fallbackLabels.length > 0) {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
-        alert(
-          `${filled} field${filled === 1 ? '' : 's'} filled. ${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} used the closest existing option because the requested value wasn't in the list:\n${fallbackLabels.slice(0, 5).join('\n')}`
-        );
+        showToast({
+          kind: 'info',
+          title: `Filled ${filled} field${filled === 1 ? '' : 's'}`,
+          message: `${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} used the closest available option:\n${fallbackLabels.slice(0, 3).join('\n')}`,
+          duration: 0
+        });
       } else {
         setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
+        showToast({
+          kind: 'success',
+          title: `Filled ${filled} field${filled === 1 ? '' : 's'}`,
+          message: 'Every field was updated successfully.',
+          duration: 3500
+        });
       }
       if (activeField) positionSingleButton();
       setTimeout(() => setFillAllState('idle'), 2500);

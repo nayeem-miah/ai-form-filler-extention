@@ -24,7 +24,7 @@ const PROVIDERS = {
       'gemini-1.5-flash',
       'gemini-1.5-pro'
     ],
-    defaultModel: 'gemini-2.5-flash'
+    defaultModel: 'gemini-3.5-flash-lite'
   },
   openai: {
     label: 'OpenAI (Official)',
@@ -439,11 +439,12 @@ function formatOptionsForPrompt(options, maxOptions = 40, maxLen = 80) {
   return items.join(' | ');
 }
 
-function buildSinglePrompt(context) {
+function buildSinglePrompt(context, options = {}) {
   const ctx = context || {};
   const optionsText = formatOptionsForPrompt(ctx.options);
 
   // Dropdown fields: force an exact option value, nothing else.
+  // No random anchor here — the value must come from the fixed option list.
   if (ctx.kind === 'select' || ctx.type === 'select' || optionsText) {
     return [
       'You are an AI form-filling assistant. Pick the best option for a dropdown field.',
@@ -483,6 +484,17 @@ function buildSinglePrompt(context) {
   if (ctx.formContext) {
     lines.push(`Surrounding form text: ${String(ctx.formContext).slice(0, 500)}`);
   }
+
+  // Variation anchor for single-field fills (same mechanism as batch).
+  const persona = options.randomize ? buildRandomPersona() : null;
+  if (persona) {
+    lines.push(...personaLines(persona));
+    lines.push(
+      'Ground this value in the anchor above so repeated clicks give different results.'
+    );
+  }
+  lines.push(...avoidLines(options.avoidValues));
+
   lines.push(
     '',
     'If the field looks like an email, return a plausible email.',
@@ -600,7 +612,7 @@ function generateFullFormSuggestion(fields, pageMeta, options = {}) {
 
 // ---------- Handlers ----------
 
-async function handleSingleFill(context, sendResponse) {
+async function handleSingleFill(context, sendResponse, request) {
   const { provider, apiKey, model, apiBaseUrl } = await getSettings();
   if (!apiKey && provider !== 'custom') {
     sendResponse({ ok: false, error: 'NO_API_KEY' });
@@ -614,14 +626,21 @@ async function handleSingleFill(context, sendResponse) {
     });
     return;
   }
+  // Variation honours the content script's toggle, falling back to the
+  // stored preference when the flag is absent.
+  const randomize = request && typeof request.randomize === 'boolean' ? request.randomize : true;
   try {
     const result = await callLLM({
       provider,
       apiKey,
       model,
       apiBaseUrl,
-      prompt: buildSinglePrompt(context || {}),
-      temperature: 0.85,
+      prompt: buildSinglePrompt(context || {}, {
+        randomize,
+        avoidValues: request && request.avoidValues
+      }),
+      // Higher temperature when randomising so clicks diverge visibly.
+      temperature: randomize ? 1.0 : 0.85,
       maxOutputTokens: 512
     });
     if (!result.ok) {
@@ -890,7 +909,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'AIFF_FILL') {
-    handleSingleFill(message.context || {}, sendResponse);
+    handleSingleFill(message.context || {}, sendResponse, {
+      randomize: message.randomize,
+      avoidValues: message.avoidValues
+    });
     return true;
   }
 

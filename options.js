@@ -26,7 +26,7 @@ const PROVIDERS = {
       'gemini-1.5-flash',
       'gemini-1.5-pro'
     ],
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3.5-flash-lite',
     keyLabel: 'Gemini API Key',
     keyPlaceholder: 'AIza...',
     keyHint: '',
@@ -103,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const randomizeToggle = document.getElementById('randomizeToggle');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
-  const testBtn = document.getElementById('testBtn');
   const toggleBtn = document.getElementById('toggleVisibility');
   const themeToggle = document.getElementById('themeToggle');
   const statusEl = document.getElementById('status');
@@ -208,10 +207,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function setBusy(busy, saveLabel = '') {
-    for (const b of [saveBtn, clearBtn, testBtn]) b.disabled = busy;
-    saveBtn.textContent = busy && saveLabel ? saveLabel : 'Save';
-    testBtn.textContent = busy ? 'Working…' : 'Test';
+  function setBusy(busy, label = 'Save & Test') {
+    for (const b of [saveBtn, clearBtn]) b.disabled = busy;
+    saveBtn.textContent = busy && label ? label : 'Save & Test';
   }
 
   // ---- Dynamic favicon (code-driven, no manifest change needed) ----
@@ -390,36 +388,84 @@ function requestHostPermission(url, onResult) {
     });
   });
 
-  // ---- Save provider + model + key (+ custom base URL) ----
-  saveBtn.addEventListener('click', () => {
+  // ---- Validate the current form; returns {key, model, baseUrl, isCustom} or null ----
+  function validateForm() {
     const catalog = PROVIDERS[currentProvider];
     const key = apiKeyInput.value.trim();
     const model = currentModel();
     const isCustom = Boolean(catalog.freeModel);
+    const baseUrl = baseUrlInput.value.trim();
 
     if (isCustom) {
-      const baseUrl = baseUrlInput.value.trim();
       if (!baseUrl) {
         setStatus('Enter an API Base URL, e.g. https://openrouter.ai/api/v1', 'error');
         baseUrlInput.focus();
-        return;
+        return null;
       }
       if (!originPatternFor(baseUrl)) {
         setStatus('That API Base URL is not valid. Include https:// and the host.', 'error');
         baseUrlInput.focus();
-        return;
+        return null;
       }
       if (!model) {
         setStatus('Enter a model name, e.g. deepseek/deepseek-r1', 'error');
         customModelInput.focus();
-        return;
+        return null;
       }
     } else if (!key) {
-      setStatus(`Please paste your ${catalog.label} API key first.`, 'error');
+      setStatus(`Paste your ${catalog.label} API key first.`, 'error');
       apiKeyInput.focus();
-      return;
+      return null;
     }
+    return { key, model, baseUrl, isCustom, catalog };
+  }
 
+  // ---- Test connection via background service worker ----
+  async function runConnectionTest(form) {
+    const { key, model, isCustom, catalog } = form;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'AIFF_TEST',
+        provider: currentProvider,
+        apiKey: key,
+        model,
+        apiBaseUrl: isCustom ? form.baseUrl : '',
+        customModel: isCustom ? customModelInput.value.trim() : ''
+      });
+      if (response && response.ok) {
+        setStatus(
+          `Saved and connected — ${catalog.label} is working with ${response.model || model}.`,
+          'success'
+        );
+      } else if (response && response.error === 'NO_API_KEY') {
+        setStatus('Saved, but no API key was available to test with.', 'error');
+      } else {
+        setStatus(
+          `Saved, but the connection test failed — ${String((response && response.detail) || 'unknown error').slice(0, 300)}`,
+          'error'
+        );
+      }
+    } catch (err) {
+      const msg = String((err && err.message) || err || '');
+      if (/extension context invalidated|context invalidated/i.test(msg)) {
+        setStatus(
+          'Settings saved. The extension was reloaded — reopen this page to finish testing.',
+          'info'
+        );
+      } else {
+        setStatus(`Settings saved, but the test errored — ${msg.slice(0, 200)}`, 'error');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- Save + Test in one action ----
+  saveBtn.addEventListener('click', () => {
+    const form = validateForm();
+    if (!form) return;
+
+    const { key, model, isCustom, catalog } = form;
     providerKeys[currentProvider] = key;
     setBusy(true, 'Saving…');
 
@@ -436,32 +482,34 @@ function requestHostPermission(url, onResult) {
       // Legacy mirror: old single `apiKey` slot always reflects the Gemini key.
       payload.apiKey = providerKeys.gemini;
       chrome.storage.sync.set(payload, () => {
-        setBusy(false);
         if (chrome.runtime.lastError) {
+          setBusy(false);
           setStatus(`Save failed: ${chrome.runtime.lastError.message}`, 'error');
           return;
         }
-        setStatus(`Settings saved. ${catalog.label}: ${model}.`, 'success');
         setFavicon(true);
+        // Saved successfully — now verify the connection in the same click.
+        setBusy(true, 'Testing…');
+        setStatus(`Saved. Testing ${catalog.label} ${model}…`, 'info');
+        runConnectionTest(form);
       });
     };
 
     if (isCustom) {
-      const baseUrl = baseUrlInput.value.trim();
       // Custom endpoints need a host permission — ask inside this click.
-      hasHostPermission(baseUrl).then((has) => {
+      hasHostPermission(form.baseUrl).then((has) => {
         if (has) {
           persist();
           return;
         }
-        requestHostPermission(baseUrl, (granted, errMessage) => {
+        requestHostPermission(form.baseUrl, (granted, errMessage) => {
           if (granted) {
             persist();
             return;
           }
           setBusy(false);
           setStatus(
-            `Cannot reach ${originPatternFor(baseUrl) || baseUrl} — ${errMessage || 'permission denied'}`,
+            `Cannot reach ${originPatternFor(form.baseUrl) || form.baseUrl} — ${errMessage || 'permission denied'}`,
             'error'
           );
         });
@@ -473,7 +521,7 @@ function requestHostPermission(url, onResult) {
 
   // ---- Remove current provider key (keeps model + theme + other keys) ----
   clearBtn.addEventListener('click', () => {
-    setBusy(true, 'Saving…');
+    setBusy(true, 'Removing…');
     providerKeys[currentProvider] = '';
     apiKeyInput.value = '';
     const payload = {
@@ -491,68 +539,6 @@ function requestHostPermission(url, onResult) {
       setStatus(`${PROVIDERS[currentProvider].label} key removed. Other settings kept.`, 'info');
       setFavicon(false);
     });
-  });
-
-  // ---- Test connection via background service worker ----
-  testBtn.addEventListener('click', async () => {
-    const catalog = PROVIDERS[currentProvider];
-    const key = apiKeyInput.value.trim();
-    const model = currentModel();
-    const isCustom = Boolean(catalog.freeModel);
-
-    if (isCustom) {
-      const baseUrl = baseUrlInput.value.trim();
-      if (!baseUrl || !originPatternFor(baseUrl)) {
-        setStatus('Enter a valid API Base URL, e.g. https://openrouter.ai/api/v1', 'error');
-        baseUrlInput.focus();
-        return;
-      }
-      if (!model) {
-        setStatus('Enter a model name, e.g. deepseek/deepseek-r1', 'error');
-        customModelInput.focus();
-        return;
-      }
-    } else if (!key) {
-      setStatus('Paste a key first, then click Test.', 'error');
-      apiKeyInput.focus();
-      return;
-    }
-
-    setBusy(true);
-    setStatus(`Testing ${catalog.label} ${model}…`, 'info');
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'AIFF_TEST',
-        provider: currentProvider,
-        apiKey: key,
-        model,
-        apiBaseUrl: isCustom ? baseUrlInput.value.trim() : '',
-        customModel: isCustom ? customModelInput.value.trim() : ''
-      });
-      if (response && response.ok) {
-        setStatus(
-          `Connection works! ${response.model || model} replied: ${(response.text || 'ok').slice(0, 80)}`,
-          'success'
-        );
-      } else if (response && response.error === 'NO_API_KEY') {
-        setStatus('No API key available for testing.', 'error');
-      } else {
-        const detail = response && response.detail ? ` ${response.detail}` : '';
-        setStatus(`Test failed.${detail}`.slice(0, 600), 'error');
-      }
-    } catch (err) {
-      const msg = String((err && err.message) || err || '');
-      if (/extension context invalidated|context invalidated/i.test(msg)) {
-        setStatus(
-          'The extension was reloaded. Please close and reopen this settings page.',
-          'error'
-        );
-      } else {
-        setStatus(`Test error: ${msg}`, 'error');
-      }
-    } finally {
-      setBusy(false);
-    }
   });
 
   // ---- Persist dropdown model immediately on change (custom uses its own field) ----
