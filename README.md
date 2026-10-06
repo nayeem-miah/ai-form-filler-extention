@@ -1,5 +1,9 @@
 # AI Form Filler Assistant
 
+## Download
+
+[**Download the latest release (v1.5.0)**](https://github.com/nayeem-miah/ai-form-filler-extention/releases/tag/v1.5.0)
+
 A Manifest V3 Chrome extension that fills web forms with AI-generated content.
 Bring your own API key (Gemini, OpenAI, or any OpenAI-compatible endpoint) and the
 extension writes sensible values into text inputs, textareas, standard `<select>`
