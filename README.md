@@ -54,21 +54,21 @@ Password, file, hidden, checkbox, radio, and disabled fields are skipped.
 
 **Google Gemini** (13 models, default `gemini-3.5-flash-lite`)
 
-| Model | Notes |
-| --- | --- |
-| `gemini-2.5-flash` | Fast, widely available |
-| `gemini-3.8-flash` | Newest in the 3.x Flash family |
-| `gemini-3.7-flash` | |
-| `gemini-3.6-flash` | |
-| `gemini-3.5-flash` | |
-| `gemini-3.5-flash-lite` | Default. Cheapest and fastest |
-| `gemini-3-flash` | |
-| `gemini-3.1-flash-lite` | |
-| `gemini-2.5-flash-lite` | |
-| `gemini-2.5-pro` | Highest quality, slower |
-| `gemini-3.1-pro-preview` | Preview build |
-| `gemini-1.5-flash` | Legacy |
-| `gemini-1.5-pro` | Legacy |
+| Model                    | Notes                          |
+| ------------------------ | ------------------------------ |
+| `gemini-2.5-flash`       | Fast, widely available         |
+| `gemini-3.8-flash`       | Newest in the 3.x Flash family |
+| `gemini-3.7-flash`       |                                |
+| `gemini-3.6-flash`       |                                |
+| `gemini-3.5-flash`       |                                |
+| `gemini-3.5-flash-lite`  | Default. Cheapest and fastest  |
+| `gemini-3-flash`         |                                |
+| `gemini-3.1-flash-lite`  |                                |
+| `gemini-2.5-flash-lite`  |                                |
+| `gemini-2.5-pro`         | Highest quality, slower        |
+| `gemini-3.1-pro-preview` | Preview build                  |
+| `gemini-1.5-flash`       | Legacy                         |
+| `gemini-1.5-pro`         | Legacy                         |
 
 **OpenAI (official)** (3 models, default `gpt-4o-mini`)
 
@@ -98,10 +98,6 @@ the host the first time you save.
   account across devices and are not end-to-end encrypted.
 - There is no analytics or telemetry.
 - Extensions cannot run on `chrome://` pages, the Chrome Web Store, or PDFs.
-
-## Author
-
-**MD Nayeem Miah** - <nayeem5113a@gmail.com> - <https://nayeem-miah.me/>
 
 ## License
 
