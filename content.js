@@ -56,6 +56,16 @@
     }
     .aiff-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(62,99,221,0.55); }
     .aiff-btn:disabled { opacity: 0.85; cursor: wait; }
+    .aiff-btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      flex: 0 0 15px;
+    }
+    .aiff-btn-icon svg { width: 100%; height: 100%; display: block; }
+    .aiff-btn-text { white-space: nowrap; }
     .aiff-btn.aiff-error { background: linear-gradient(135deg, #d13415, #e5484d); box-shadow: 0 4px 16px rgba(229,72,77,0.45); }
     .aiff-btn.aiff-success { background: linear-gradient(135deg, #18794e, #30a46c); box-shadow: 0 4px 16px rgba(48,164,108,0.45); }
     .aiff-single {
@@ -69,15 +79,16 @@
       position: fixed;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       right: 20px;
       bottom: 20px;
-      padding: 12px 18px;
-      font-size: 14px;
+      padding: 11px 16px;
+      font-size: 13.5px;
       background: linear-gradient(135deg, #18794e, #30a46c);
       box-shadow: 0 8px 24px rgba(24, 121, 78, 0.45);
       cursor: grab;
     }
+    .aiff-fill-all .aiff-btn-icon { width: 14px; height: 14px; flex: 0 0 14px; }
     .aiff-fill-all:active { cursor: grabbing; }
     .aiff-fill-all:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(24,121,78,0.55); }
 
@@ -365,7 +376,45 @@ function openOptionsPage() {
   }
 }
 
-// ---------- Shadow DOM setup ----------
+// Clean SVG glyphs (no emoji) for the floating buttons.
+  const ICONS = {
+    sparkle:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11l-1 8.5 9-12H12.5L13 2z"/></svg>',
+    spinner:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    warning:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
+  };
+
+  /** Build button internals: an icon span plus a text span. */
+  function buildButtonContent(btn, iconSvg, label) {
+    btn.textContent = '';
+    const icon = document.createElement('span');
+    icon.className = 'aiff-btn-icon';
+    icon.innerHTML = iconSvg;
+    const text = document.createElement('span');
+    text.className = 'aiff-btn-text';
+    text.textContent = label;
+    btn.appendChild(icon);
+    btn.appendChild(text);
+  }
+
+  /** Update icon + label without rebuilding the button. */
+  function setButtonFace(btn, iconSvg, label) {
+    if (!btn) return;
+    let icon = btn.querySelector('.aiff-btn-icon');
+    let text = btn.querySelector('.aiff-btn-text');
+    if (!icon || !text) {
+      buildButtonContent(btn, iconSvg, label);
+      return;
+    }
+    if (iconSvg) icon.innerHTML = iconSvg;
+    if (label != null) text.textContent = label;
+  }
+
+  // ---------- Shadow DOM setup ----------
 
   function ensureUI() {
     if (host && shadow && singleBtn && fillAllBtn) return;
@@ -392,7 +441,7 @@ function openOptionsPage() {
       singleBtn.type = 'button';
       singleBtn.className = 'aiff-btn aiff-single';
       singleBtn.setAttribute('data-aiff-single', 'true');
-      singleBtn.textContent = '✨ AI Fill';
+      buildButtonContent(singleBtn, ICONS.sparkle, 'AI Fill');
       singleBtn.addEventListener('mousedown', (e) => e.preventDefault());
       singleBtn.addEventListener('click', onSingleFillClick);
       trackPointerOnButton(singleBtn);
@@ -406,7 +455,7 @@ function openOptionsPage() {
       fillAllBtn.type = 'button';
       fillAllBtn.className = 'aiff-btn aiff-fill-all';
       fillAllBtn.setAttribute('data-aiff-fill-all', 'true');
-      fillAllBtn.textContent = '⚡ Fill All Fields';
+      buildButtonContent(fillAllBtn, ICONS.bolt, 'Fill All Fields');
       fillAllBtn.title = 'Drag to move';
       fillAllBtn.addEventListener('mousedown', (e) => e.preventDefault());
       fillAllBtn.addEventListener('click', onFillAllClickCapture, true);
@@ -1079,18 +1128,18 @@ function openOptionsPage() {
     if (state === 'loading') {
       isSingleLoading = true;
       singleBtn.disabled = true;
-      singleBtn.textContent = text || '⏳ Generating…';
+      setButtonFace(singleBtn, ICONS.spinner, text || 'Generating…');
     } else if (state === 'error') {
       isSingleLoading = false;
       singleBtn.classList.add('aiff-error');
-      singleBtn.textContent = text || '⚠️ Failed';
+      setButtonFace(singleBtn, ICONS.warning, text || 'Failed');
     } else if (state === 'success') {
       isSingleLoading = false;
       singleBtn.classList.add('aiff-success');
-      singleBtn.textContent = text || '✓ Filled!';
+      setButtonFace(singleBtn, ICONS.check, text || 'Filled!');
     } else {
       isSingleLoading = false;
-      singleBtn.textContent = text || '✨ AI Fill';
+      setButtonFace(singleBtn, ICONS.sparkle, text || 'AI Fill');
     }
   }
 
@@ -1101,18 +1150,18 @@ function openOptionsPage() {
     if (state === 'loading') {
       isBatchLoading = true;
       fillAllBtn.disabled = true;
-      fillAllBtn.textContent = text || '⏳ Filling all…';
+      setButtonFace(fillAllBtn, ICONS.spinner, text || 'Filling all…');
     } else if (state === 'error') {
       isBatchLoading = false;
       fillAllBtn.classList.add('aiff-error');
-      fillAllBtn.textContent = text || '⚠️ Fill-all failed';
+      setButtonFace(fillAllBtn, ICONS.warning, text || 'Fill-all failed');
     } else if (state === 'success') {
       isBatchLoading = false;
       fillAllBtn.classList.add('aiff-success');
-      fillAllBtn.textContent = text || '✓ All filled!';
+      setButtonFace(fillAllBtn, ICONS.check, text || 'All filled!');
     } else {
       isBatchLoading = false;
-      fillAllBtn.textContent = text || '⚡ Fill All Fields';
+      setButtonFace(fillAllBtn, ICONS.bolt, text || 'Fill All Fields');
     }
   }
 

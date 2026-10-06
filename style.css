@@ -165,20 +165,6 @@ html[data-theme="dark"] {
   border-color: var(--border-color);
 }
 
-.aiff-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 20px;
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--aiff-muted);
-  background: var(--aiff-hover-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-}
-
 .aiff-label {
   display: block;
   font-size: 11px;
@@ -186,7 +172,7 @@ html[data-theme="dark"] {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--aiff-muted);
-  margin: 16px 0 6px;
+  margin: 14px 0 6px;
 }
 
 .aiff-label:first-of-type {
@@ -217,15 +203,6 @@ html[data-theme="dark"] {
 
 #customSection[hidden] {
   display: none;
-}
-
-/* Author `display` declarations override the UA `[hidden]` rule, so the
-   Model label / dropdown must be hidden explicitly. */
-.aiff-label[hidden],
-.aiff-select[hidden],
-.aiff-input[hidden],
-.aiff-hint[hidden] {
-  display: none !important;
 }
 
 /* Input with icon button inside (right side) */
@@ -316,7 +293,7 @@ html[data-theme="dark"] {
 .aiff-actions {
   display: flex;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
 
 /* ---------- Randomize toggle ---------- */
@@ -324,27 +301,14 @@ html[data-theme="dark"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  margin-top: 18px;
-}
-
-.aiff-toggle-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .aiff-toggle-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-main);
-}
-
-.aiff-toggle-desc {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--aiff-muted);
 }
 
 .aiff-switch {
@@ -374,10 +338,6 @@ html[data-theme="dark"] {
 }
 
 .aiff-switch.is-on {
-  background: var(--primary);
-}
-
-html[data-theme="light"] .aiff-switch.is-on {
   background: var(--aiff-indigo);
 }
 
@@ -386,21 +346,15 @@ html[data-theme="light"] .aiff-switch.is-on {
 }
 
 /* ---------- Update checker ---------- */
-.aiff-divider {
-  border: none;
-  border-top: 1px solid var(--border-color);
-  margin: 20px 0 14px;
-}
-
-.aiff-update-head {
+.aiff-update-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin-top: 14px;
 }
 
-.aiff-update-title {
-  margin: 0;
+.aiff-update-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -409,12 +363,13 @@ html[data-theme="light"] .aiff-switch.is-on {
 }
 
 .aiff-btn-sm {
+  flex: 0 0 auto;
   padding: 6px 12px;
   font-size: 12px;
 }
 
 .aiff-update-result {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--aiff-muted);
@@ -515,8 +470,8 @@ html[data-theme="light"] .aiff-switch.is-on {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--border-color);
   font-size: 12px;
   color: var(--aiff-muted);

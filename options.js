@@ -29,7 +29,6 @@ const PROVIDERS = {
     defaultModel: 'gemini-3.5-flash-lite',
     keyLabel: 'Gemini API Key',
     keyPlaceholder: 'AIza...',
-    keyHint: '',
     keyLink: 'https://aistudio.google.com/app/apikey',
     keyLinkText: 'Get a Gemini key',
     modelsLink: 'https://ai.google.dev/gemini-api/docs/models'
@@ -40,7 +39,6 @@ const PROVIDERS = {
     defaultModel: 'gpt-4o-mini',
     keyLabel: 'OpenAI API Key',
     keyPlaceholder: 'sk-...',
-    keyHint: '',
     keyLink: 'https://platform.openai.com/api-keys',
     keyLinkText: 'Get an OpenAI key',
     modelsLink: 'https://platform.openai.com/docs/models'
@@ -52,7 +50,6 @@ const PROVIDERS = {
     freeModel: true,
     keyLabel: 'API Key (optional)',
     keyPlaceholder: 'sk-or-v1-...',
-    keyHint: 'Leave empty for local servers such as Ollama or LM Studio.',
     keyLink: 'https://openrouter.ai/models',
     keyLinkText: 'Browse compatible providers',
     modelsLink: 'https://openrouter.ai/models'
@@ -93,9 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const customModelInput = document.getElementById('customModel');
   const apiKeyLabel = document.getElementById('apiKeyLabel');
   const apiKeyInput = document.getElementById('apiKey');
-  const keyHint = document.getElementById('keyHint');
   const modelSelect = document.getElementById('modelSelect');
   const modelLabelEl = document.getElementById('modelLabel');
+  const modelRow = document.getElementById('modelRow');
   const keyLink = document.getElementById('keyLink');
   const modelsLink = document.getElementById('modelsLink');
   const updateBtn = document.getElementById('updateBtn');
@@ -123,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const useCustomModel = Boolean(catalog.freeModel);
     modelSelect.hidden = useCustomModel;
     modelLabelEl.hidden = useCustomModel;
+    modelRow.hidden = useCustomModel;
     if (useCustomModel) return;
 
     for (const id of catalog.models) {
@@ -158,8 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
     apiKeyLabel.textContent = catalog.keyLabel;
     apiKeyInput.placeholder = catalog.keyPlaceholder;
     apiKeyInput.value = providerKeys[currentProvider] || '';
-    keyHint.textContent = catalog.keyHint || '';
-    keyHint.hidden = !catalog.keyHint;
     customSection.hidden = !catalog.freeModel;
     buildModelOptions(currentProvider, modelToSelect || catalog.defaultModel);
     keyLink.href = catalog.keyLink;

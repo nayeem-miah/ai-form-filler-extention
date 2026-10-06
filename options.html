@@ -13,33 +13,24 @@
     <header class="aiff-header">
       <div class="aiff-title-wrap">
         <h1>AI Form Filler</h1>
-        <p class="aiff-subtitle">AI-powered form filling</p>
+        <p class="aiff-subtitle">Gemini, OpenAI &amp; compatible APIs</p>
       </div>
-      <button id="themeToggle" class="aiff-icon-btn" type="button" aria-label="Switch to dark mode" title="Toggle light / dark mode">
+      <button id="themeToggle" class="aiff-icon-btn" type="button" aria-label="Switch to dark mode" title="Toggle light / dark">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
       </button>
     </header>
 
-    <div class="aiff-badge">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-      </svg>
-      <span>Encrypted &amp; Stored Locally</span>
-    </div>
-
     <label class="aiff-label" for="providerSelect">Provider</label>
     <select id="providerSelect" class="aiff-select">
       <option value="gemini">Google Gemini</option>
-      <option value="openai">OpenAI (Official)</option>
-      <option value="custom">OpenAI Compatible / Custom API</option>
+      <option value="openai">OpenAI</option>
+      <option value="custom">OpenAI Compatible / Custom</option>
     </select>
 
-    <!-- Shown only for the OpenAI Compatible / Custom API provider -->
     <div id="customSection" hidden>
-      <label class="aiff-label" for="apiBaseUrl">API Base URL</label>
+      <label class="aiff-label" for="apiBaseUrl">Base URL</label>
       <input
         id="apiBaseUrl"
         class="aiff-input"
@@ -48,18 +39,16 @@
         autocomplete="off"
         spellcheck="false"
       />
-      <p class="aiff-hint">Examples: <code>https://openrouter.ai/api/v1</code> · <code>https://api.groq.com/openai/v1</code> · <code>http://localhost:11434/v1</code></p>
 
-      <label class="aiff-label" for="customModel">Model Name</label>
+      <label class="aiff-label" for="customModel">Model</label>
       <input
         id="customModel"
         class="aiff-input"
         type="text"
-        placeholder="deepseek/deepseek-r1"
+        placeholder="deepseek/deepseek-chat"
         autocomplete="off"
         spellcheck="false"
       />
-      <p class="aiff-hint">Examples: <code>deepseek/deepseek-r1</code> · <code>llama-3.3-70b-versatile</code> · <code>mistral-7b-instruct</code> · <code>llama3.1:8b</code></p>
     </div>
 
     <label class="aiff-label" for="apiKey" id="apiKeyLabel">API Key</label>
@@ -68,7 +57,7 @@
         id="apiKey"
         class="aiff-input"
         type="password"
-        placeholder="AIza..."
+        placeholder="sk-..."
         autocomplete="off"
         spellcheck="false"
       />
@@ -79,10 +68,11 @@
         </svg>
       </button>
     </div>
-    <p class="aiff-hint" id="keyHint">Leave empty for local servers such as Ollama.</p>
 
-    <label class="aiff-label" for="modelSelect" id="modelLabel">Model</label>
-    <select id="modelSelect" class="aiff-select"></select>
+    <div id="modelRow">
+      <label class="aiff-label" for="modelSelect" id="modelLabel">Model</label>
+      <select id="modelSelect" class="aiff-select"></select>
+    </div>
 
     <div class="aiff-actions">
       <button id="saveBtn" class="aiff-btn-primary" type="button">Save &amp; Test</button>
@@ -93,8 +83,7 @@
 
     <div class="aiff-row aiff-toggle-row">
       <div class="aiff-toggle-copy">
-        <span class="aiff-toggle-title">Randomize generated values</span>
-        <span class="aiff-toggle-desc">Gives new names, numbers and text on every ✨ AI Fill and ⚡ Fill All run. Dropdowns keep their existing options, so those stay the same.</span>
+        <span class="aiff-toggle-title">Randomize values</span>
       </div>
       <button
         id="randomizeToggle"
@@ -103,21 +92,18 @@
         role="switch"
         aria-checked="true"
         aria-label="Randomize generated values"
+        title="Give different values on each run"
       ></button>
     </div>
 
-    <hr class="aiff-divider" />
-
-    <section class="aiff-update" aria-labelledby="updateHeading">
-      <div class="aiff-update-head">
-        <h2 class="aiff-update-title" id="updateHeading">Updates</h2>
-        <button id="updateBtn" class="aiff-btn-ghost aiff-btn-sm" type="button">Check for Updates</button>
-      </div>
-      <p id="updateResult" class="aiff-update-result" role="status" aria-live="polite"></p>
-    </section>
+    <div class="aiff-row aiff-update-row">
+      <span class="aiff-update-label">Version</span>
+      <button id="updateBtn" class="aiff-btn-ghost aiff-btn-sm" type="button">Check updates</button>
+    </div>
+    <p id="updateResult" class="aiff-update-result" role="status" aria-live="polite"></p>
 
     <footer class="aiff-footer">
-      <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get a Gemini key</a>
+      <a id="keyLink" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Get key</a>
       <span aria-hidden="true">·</span>
       <a id="modelsLink" href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Models</a>
     </footer>
