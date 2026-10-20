@@ -1,8 +1,7 @@
 /* style.css
  * Serves two roles:
- *  1. Content-script scoping layer — the floating buttons live in Shadow DOM
- *     (see content.js), so this file only pins the host container and provides
- *     light-DOM fallback classes.
+ *  1. Content-script scoping layer — the toast notifications live in Shadow DOM
+ *     (see content.js), so this file only pins the host container.
  *  2. Options page design system — minimalist Vercel/Linear-inspired card
  *     (compact 400–440px, subtle borders, 12–16px radii, soft shadow),
  *     with light + dark themes via [data-theme] on <html>.
@@ -61,35 +60,6 @@ html[data-theme="dark"] {
   height: 0;
   z-index: 2147483647 !important;
   pointer-events: none !important;
-}
-
-/* Fallback if a button is ever rendered in light DOM */
-.aiff-btn-fallback {
-  position: fixed;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #6e56cf, #3e63dd);
-  border: none;
-  border-radius: 999px;
-  box-shadow: 0 4px 16px rgba(62, 99, 221, 0.45);
-  cursor: pointer;
-  white-space: nowrap;
-  z-index: 2147483647;
-}
-
-.aiff-fill-all-fallback {
-  right: 20px;
-  bottom: 20px;
-  padding: 12px 18px;
-  font-size: 14px;
-  background: linear-gradient(135deg, #18794e, #30a46c);
-  box-shadow: 0 8px 24px rgba(24, 121, 78, 0.45);
 }
 
 /* ---------- Options page (minimalist SaaS) ---------- */
@@ -562,6 +532,13 @@ body.aiff-modal-open {
 .aiff-credit a:hover {
   color: var(--text-main);
   text-decoration: underline;
+}
+
+/* ---------- Free tier status ---------- */
+.aiff-free-status {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 
 /* ---------- Update checker ---------- */

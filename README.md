@@ -2,11 +2,12 @@
 
 ## Download
 
-[**Download the latest release (v1.5.0)**](https://github.com/nayeem-miah/ai-form-filler-extention/releases/tag/v1.5.0)
+[**Download the latest release**](https://github.com/nayeem-miah/ai-form-filler-extention/releases/latest)
 
-A Chrome extension that fills web forms using AI. Bring your own API key and it writes
+A Chrome extension that fills web forms using AI. Click the toolbar icon and it writes
 realistic values into text inputs, textareas, standard dropdowns, and modern
-React/Tailwind custom dropdowns.
+React/Tailwind custom dropdowns. Every install gets **10 free requests per day**; after
+that, bring your own API key.
 
 ## Install
 
@@ -21,11 +22,20 @@ React/Tailwind custom dropdowns.
 
 ## Setup
 
-1. Click the extension icon in the toolbar. The settings page opens directly.
+You can start without any setup: each browser install gets **10 free requests per
+day**. Click the extension icon on a form and it fills everything. When the daily
+free requests run out, add your own key (below) to keep going.
+
+1. Right-click the extension icon and choose **Options** (or click **Open Settings**
+   in any notification).
 2. Choose a **Provider** (see below).
 3. Paste your API key, pick a **Model**, and click **Save & Test**. This saves your
    settings and checks the connection in one step.
 4. A green confirmation means you are ready to fill forms.
+
+Your free requests are used first; once the daily allowance runs out, your own key
+takes over automatically. (If the trial key ever fails, the request is retried with
+your own key.)
 
 Where to get a key:
 
@@ -42,13 +52,18 @@ Where to get a key:
 
 ## How to use
 
-- **Fill one field**: hover over or focus any text field, then click **AI Fill**.
-- **Fill the whole form**: click **Fill All Fields**. Every visible field is filled in
-  one request.
+- **Fill the whole form**: click the extension icon in the toolbar. Every visible field
+  is filled in one request — text inputs, textareas, selects, and custom dropdowns.
+- **Passwords**: password and confirm-password fields are always filled with the same
+  fixed default password (`Password123$`, set by `DEFAULT_PASSWORD` in `content.js`).
+  It is filled locally and is never sent to the AI. "Current / old password" fields are
+  left untouched.
 - **Randomize values** is on by default, so each run returns different data. Turn it
   off for predictable values.
+- **Settings**: right-click the extension icon → **Options**. The toolbar badge shows
+  how many free requests are left today.
 
-Password, file, hidden, checkbox, radio, and disabled fields are skipped.
+File, hidden, checkbox, radio, and disabled fields are skipped.
 
 ## Providers and models
 
@@ -94,6 +109,10 @@ the host the first time you save.
 
 ## Notes
 
+- The free tier is served by the trial key at `FREE_TIER.apiKey` in
+  `background.js` (provider/model `FREE_TIER.provider` / `FREE_TIER.model`). Usage is
+  tracked per browser install (not per account) and resets at local midnight. Because
+  the key ships inside the extension, it can be extracted — monitor and rotate it.
 - Keys are saved with `chrome.storage.sync`, which means they sync with your Google
   account across devices and are not end-to-end encrypted.
 - There is no analytics or telemetry.

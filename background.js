@@ -40,6 +40,22 @@ const PROVIDERS = {
 };
 const DEFAULT_PROVIDER = 'gemini';
 
+// ---------- Free trial tier ----------
+// Every browser install gets FREE_DAILY_LIMIT requests per day, served with the
+// developer's own key, so new users can try the extension before signing up for
+// a provider. The key below ships inside the extension: anyone who unpacks it
+// can read it, so treat it as a trial key with a low quota and rotate it if it
+// is abused. Leave `apiKey` empty to disable the free tier entirely.
+const FREE_DAILY_LIMIT = 10;
+const FREE_TIER = {
+  provider: 'gemini',
+  model: 'gemini-3.5-flash-lite',
+  // Trial key used for the first FREE_DAILY_LIMIT requests of each day.
+  // NOTE: this ships inside the extension and is readable by anyone who unpacks
+  // it. Monitor its usage and rotate/restrict it if it gets abused.
+  apiKey: 'AQ.Ab8RN6Lz4BEq_erxl2IoLoIy0Q8Pnld04V2DEFaqoQpdSUkDwg'
+};
+
 function normalizeProvider(value) {
   if (value === 'openai' || value === 'custom') return value;
   return DEFAULT_PROVIDER;
@@ -118,6 +134,127 @@ async function getSettings() {
   }
 
   return { provider, apiKey, model, apiBaseUrl };
+}
+
+// ---------- Free-tier usage tracking ----------
+
+function freeTierConfigured() {
+  return Boolean(cleanKey(FREE_TIER.apiKey));
+}
+
+function localDateKey() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Usage is tracked per browser install (chrome.storage.local) — there is no
+// sign-in — and resets at local midnight.
+async function readFreeUsage() {
+  let stored = {};
+  try {
+    stored = await chrome.storage.local.get(['freeUsage', 'installId']);
+  } catch {
+    stored = {};
+  }
+  if (!stored.installId) {
+    try {
+      await chrome.storage.local.set({ installId: crypto.randomUUID() });
+    } catch {
+      /* storage unavailable — the in-memory counter still applies */
+    }
+  }
+  const today = localDateKey();
+  const usage = stored.freeUsage;
+  if (!usage || usage.date !== today || typeof usage.count !== 'number') {
+    return { date: today, count: 0 };
+  }
+  return usage;
+}
+
+async function remainingFreeRequests() {
+  if (!freeTierConfigured()) return 0;
+  const usage = await readFreeUsage();
+  return Math.max(0, FREE_DAILY_LIMIT - usage.count);
+}
+
+async function consumeFreeRequest() {
+  const usage = await readFreeUsage();
+  usage.count += 1;
+  try {
+    await chrome.storage.local.set({ freeUsage: usage });
+  } catch {
+    /* noop */
+  }
+  const remaining = Math.max(0, FREE_DAILY_LIMIT - usage.count);
+  refreshActionIcon();
+  return remaining;
+}
+
+// Which credentials should a fill request use? Free trial requests are spent
+// first (this is a per-install daily allowance); once they run out, the user's
+// own key takes over. If the trial key itself fails (quota, revoked, network),
+// the request is retried once with the user's own key so they are never blocked.
+async function resolveCredentials() {
+  const own = await getSettings();
+  const hasOwn =
+    own.provider === 'custom' ? Boolean(own.apiBaseUrl && own.model) : Boolean(own.apiKey);
+  const ownCreds = hasOwn ? { ...own, source: 'user' } : null;
+  const freeRemaining = await remainingFreeRequests();
+
+  if (freeRemaining > 0) {
+    return {
+      ok: true,
+      primary: {
+        provider: FREE_TIER.provider,
+        apiKey: FREE_TIER.apiKey,
+        model: FREE_TIER.model,
+        apiBaseUrl: '',
+        source: 'free'
+      },
+      fallback: ownCreds,
+      freeRemaining
+    };
+  }
+
+  if (ownCreds) {
+    return { ok: true, primary: ownCreds, fallback: null, freeRemaining: 0 };
+  }
+
+  return {
+    ok: false,
+    source: 'none',
+    freeEnabled: freeTierConfigured(),
+    freeRemaining: 0
+  };
+}
+
+// Runs a prompt on the resolved credentials, with a one-shot fallback to the
+// user's own key when the free trial key fails.
+async function callLLMForFill(cred, args) {
+  const primary = cred.primary;
+  let result = await callLLMWithCreditFallback({
+    provider: primary.provider,
+    apiKey: primary.apiKey,
+    model: primary.model,
+    apiBaseUrl: primary.apiBaseUrl,
+    ...args
+  });
+  let source = primary.source;
+
+  if (!result.ok && cred.fallback) {
+    const fb = cred.fallback;
+    result = await callLLMWithCreditFallback({
+      provider: fb.provider,
+      apiKey: fb.apiKey,
+      model: fb.model,
+      apiBaseUrl: fb.apiBaseUrl,
+      ...args
+    });
+    source = fb.source;
+  }
+
+  return { result, source };
 }
 
 function extractText(data) {
@@ -676,16 +813,13 @@ function generateFullFormSuggestion(fields, pageMeta, options = {}) {
 // ---------- Handlers ----------
 
 async function handleSingleFill(context, sendResponse, request) {
-  const { provider, apiKey, model, apiBaseUrl } = await getSettings();
-  if (!apiKey && provider !== 'custom') {
-    sendResponse({ ok: false, error: 'NO_API_KEY' });
-    return;
-  }
-  if (provider === 'custom' && !apiBaseUrl) {
+  const cred = await resolveCredentials();
+  if (!cred.ok) {
     sendResponse({
       ok: false,
-      error: 'API_ERROR',
-      detail: 'Set an API Base URL in the extension options first.'
+      error: 'NO_API_KEY',
+      freeExhausted: Boolean(cred.freeEnabled),
+      freeRemaining: 0
     });
     return;
   }
@@ -693,11 +827,7 @@ async function handleSingleFill(context, sendResponse, request) {
   // stored preference when the flag is absent.
   const randomize = request && typeof request.randomize === 'boolean' ? request.randomize : true;
   try {
-    const result = await callLLMWithCreditFallback({
-      provider,
-      apiKey,
-      model,
-      apiBaseUrl,
+    const { result, source } = await callLLMForFill(cred, {
       prompt: buildSinglePrompt(context || {}, {
         randomize,
         avoidValues: request && request.avoidValues
@@ -709,10 +839,17 @@ async function handleSingleFill(context, sendResponse, request) {
       maxOutputTokens: 768
     });
     if (!result.ok) {
-      sendResponse(result);
+      sendResponse({ ...result, source, freeRemaining: cred.freeRemaining });
       return;
     }
-    sendResponse({ ok: true, text: result.text, model: result.model });
+    const freeRemaining = source === 'free' ? await consumeFreeRequest() : cred.freeRemaining;
+    sendResponse({
+      ok: true,
+      text: result.text,
+      model: result.model,
+      source,
+      freeRemaining
+    });
   } catch (err) {
     sendResponse({
       ok: false,
@@ -723,16 +860,13 @@ async function handleSingleFill(context, sendResponse, request) {
 }
 
 async function handleBatchFill(payload, sendResponse) {
-  const { provider, apiKey, model, apiBaseUrl } = await getSettings();
-  if (!apiKey && provider !== 'custom') {
-    sendResponse({ ok: false, error: 'NO_API_KEY' });
-    return;
-  }
-  if (provider === 'custom' && !apiBaseUrl) {
+  const cred = await resolveCredentials();
+  if (!cred.ok) {
     sendResponse({
       ok: false,
-      error: 'API_ERROR',
-      detail: 'Set an API Base URL in the extension options first.'
+      error: 'NO_API_KEY',
+      freeExhausted: Boolean(cred.freeEnabled),
+      freeRemaining: 0
     });
     return;
   }
@@ -745,11 +879,7 @@ async function handleBatchFill(payload, sendResponse) {
   const capped = fields.slice(0, 40);
   const randomize = payload?.randomize !== false;
   try {
-    const result = await callLLMWithCreditFallback({
-      provider,
-      apiKey,
-      model,
-      apiBaseUrl,
+    const { result, source } = await callLLMForFill(cred, {
       prompt: generateFullFormSuggestion(capped, payload?.page, {
         randomize,
         avoidValues: payload?.avoidValues
@@ -761,7 +891,7 @@ async function handleBatchFill(payload, sendResponse) {
       maxOutputTokens: 1536
     });
     if (!result.ok) {
-      sendResponse(result);
+      sendResponse({ ...result, source, freeRemaining: cred.freeRemaining });
       return;
     }
     const cleaned = stripMarkdownFences(result.text);
@@ -775,7 +905,9 @@ async function handleBatchFill(payload, sendResponse) {
         sendResponse({
           ok: false,
           error: 'BAD_JSON',
-          detail: `Model did not return valid JSON. Raw output: ${cleaned.slice(0, 800)}`
+          detail: `Model did not return valid JSON. Raw output: ${cleaned.slice(0, 800)}`,
+          source,
+          freeRemaining: cred.freeRemaining
         });
         return;
       }
@@ -784,7 +916,9 @@ async function handleBatchFill(payload, sendResponse) {
       sendResponse({
         ok: false,
         error: 'BAD_JSON',
-        detail: `Model did not return a JSON object. Raw output: ${cleaned.slice(0, 800)}`
+        detail: `Model did not return a JSON object. Raw output: ${cleaned.slice(0, 800)}`,
+        source,
+        freeRemaining: cred.freeRemaining
       });
       return;
     }
@@ -794,7 +928,14 @@ async function handleBatchFill(payload, sendResponse) {
     for (const [uid, val] of Object.entries(values)) {
       if (knownUids.has(uid)) normalized[uid] = val == null ? '' : String(val);
     }
-    sendResponse({ ok: true, values: normalized, model: result.model });
+    const freeRemaining = source === 'free' ? await consumeFreeRequest() : cred.freeRemaining;
+    sendResponse({
+      ok: true,
+      values: normalized,
+      model: result.model,
+      source,
+      freeRemaining
+    });
   } catch (err) {
     sendResponse({
       ok: false,
@@ -928,19 +1069,58 @@ async function handleCheckUpdate(sendResponse) {
   }
 }
 
-// ---------- Toolbar icon click -> open settings ----------
+// ---------- Toolbar icon click -> fill every field on the page ----------
 
-// No default_popup is declared, so this listener receives the click and we
-// send the user straight to the Options page.
+// No default_popup is declared, so this listener receives the click. There are
+// no in-page buttons: the click delegates the fill to the active tab's content
+// script. Settings stay reachable from Chrome's right-click menu → Options, and
+// from the "Open Settings" action in any toast.
+async function triggerFillAllInTab(tab) {
+  const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
+  if (tabId == null) return;
+  const message = { type: 'AIFF_FILL_ALL_FIELDS' };
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+    return;
+  } catch {
+    /* Content script not available yet — e.g. the extension was just reloaded. */
+  }
+  try {
+    // Inject on demand, then retry once. Requires `scripting` + activeTab.
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // Cannot inject here (chrome:// pages, PDFs, Web Store, etc.).
+    flashBadge('!');
+  }
+}
+
+let badgeTimer = null;
+function flashBadge(text) {
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: '#d13415' });
+    chrome.action.setBadgeText({ text });
+    clearTimeout(badgeTimer);
+    badgeTimer = setTimeout(() => {
+      try {
+        chrome.action.setBadgeText({ text: '' });
+        refreshActionIcon();
+      } catch {
+        /* noop */
+      }
+    }, 2500);
+  } catch {
+    /* noop */
+  }
+}
+
 if (chrome.action && chrome.action.onClicked) {
-  chrome.action.onClicked.addListener(() => {
-    chrome.runtime.openOptionsPage().catch(() => {
-      chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
-    });
+  chrome.action.onClicked.addListener((tab) => {
+    triggerFillAllInTab(tab);
   });
 }
 
-// ---------- Dynamic toolbar icon (active/idle based on API key) ----------
+// ---------- Dynamic toolbar icon (active/idle + free-credit badge) ----------
 
 const ICON_SETS = {
   active: { 16: 'icons/active-16.png', 48: 'icons/active-48.png', 128: 'icons/active-128.png' },
@@ -949,22 +1129,40 @@ const ICON_SETS = {
 
 async function refreshActionIcon() {
   try {
-    const { apiKey } = await getSettings();
-    const hasKey = typeof apiKey === 'string' && apiKey.trim().length > 0;
-    await chrome.action.setIcon({ path: hasKey ? ICON_SETS.active : ICON_SETS.idle });
+    const own = await getSettings();
+    const hasOwn =
+      own.provider === 'custom' ? Boolean(own.apiBaseUrl && own.model) : Boolean(own.apiKey);
+    const remaining = await remainingFreeRequests();
+    await chrome.action.setIcon({
+      path: hasOwn || remaining > 0 ? ICON_SETS.active : ICON_SETS.idle
+    });
+
+    // Free requests are spent first, so the badge always shows how many are
+    // left today while the trial key is what the next click will use.
+    if (remaining > 0) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#3e63dd' });
+      await chrome.action.setBadgeText({ text: String(remaining) });
+    } else {
+      await chrome.action.setBadgeText({ text: '' });
+    }
   } catch {
     /* icon update is best-effort; core fill logic unaffected */
   }
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (!changes) return;
+  if (area === 'local' && Object.hasOwn(changes, 'freeUsage')) {
+    refreshActionIcon();
+    return;
+  }
   if (
     area === 'sync' &&
-    changes &&
     (Object.hasOwn(changes, 'apiKey') ||
       Object.hasOwn(changes, 'geminiApiKey') ||
       Object.hasOwn(changes, 'openaiApiKey') ||
-      Object.hasOwn(changes, 'customApiKey'))
+      Object.hasOwn(changes, 'customApiKey') ||
+      Object.hasOwn(changes, 'apiBaseUrl'))
   ) {
     refreshActionIcon();
   }
@@ -999,6 +1197,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'AIFF_FILL_ALL') {
     handleBatchFill(message.payload || {}, sendResponse);
+    return true;
+  }
+
+  if (message.type === 'AIFF_FREE_STATUS') {
+    (async () => {
+      const enabled = freeTierConfigured();
+      const remaining = await remainingFreeRequests();
+      sendResponse({ ok: true, enabled, remaining, limit: FREE_DAILY_LIMIT });
+    })();
     return true;
   }
 

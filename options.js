@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggleBtn = document.getElementById('toggleVisibility');
   const themeToggle = document.getElementById('themeToggle');
   const statusEl = document.getElementById('status');
+  const freeStatus = document.getElementById('freeStatus');
 
   let statusTimer = 0;
   let currentProvider = DEFAULT_PROVIDER;
@@ -231,6 +232,24 @@ document.addEventListener('DOMContentLoaded', () => {
       /* favicon is cosmetic; ignore failures */
     }
   }
+
+  // ---- Free tier status (10 requests/day per browser install) ----
+  async function loadFreeStatus() {
+    if (!freeStatus) return;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'AIFF_FREE_STATUS' });
+      if (!res || !res.ok) {
+        freeStatus.textContent = 'Unavailable';
+        return;
+      }
+      freeStatus.textContent = res.enabled
+        ? `${res.remaining} of ${res.limit} left`
+        : 'Not available';
+    } catch {
+      freeStatus.textContent = 'Unavailable';
+    }
+  }
+  loadFreeStatus();
 
   // ---- Host permission for custom endpoints (requested on Save) ----
 function originPatternFor(url) {

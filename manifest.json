@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AI Form Filler Assistant",
-  "version": "1.5.0",
-  "description": "Single-field AI Fill + Fill All Fields batch form filling with text, select, and custom dropdown support, powered by Google Gemini, OpenAI, or any OpenAI-compatible API (OpenRouter, Groq, Together, DeepSeek, Ollama, local servers).",
+  "version": "1.6.0",
+  "description": "Click the toolbar icon to fill every field on a page with AI — text, selects, and custom dropdowns — plus a default password in password fields. 10 free requests per day, then bring your own Gemini, OpenAI, or compatible API key.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
@@ -29,7 +29,7 @@
   ],
   "options_page": "options.html",
   "action": {
-    "default_title": "AI Form Filler Assistant",
+    "default_title": "AI Form Filler — click to fill all fields",
     "default_icon": {
       "16": "icons/active-16.png",
       "48": "icons/active-48.png",

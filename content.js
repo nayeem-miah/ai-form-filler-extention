@@ -1,19 +1,21 @@
-/* content.js — Dual fill capabilities:
- *  1. Single Field Fill: floating "✨ AI Fill" button near any focused <input>,
- *     <textarea>, <select>, or custom dropdown trigger.
- *  2. Entire Form Fill: fixed "⚡ Fill All Fields" button at bottom-right; batch-fills
- *     all visible fields (text inputs, selects, custom comboboxes) seamlessly.
- * Shadow DOM is used for both buttons to avoid CSS collisions with host pages.
- * Event delegation (focusin) handles SPA / dynamically-rendered inputs.
+/* content.js — Batch form filling, driven from the toolbar icon.
+ *  There are no in-page buttons any more. Clicking the extension icon asks this
+ *  script (via the AIFF_FILL_ALL_FIELDS message) to fill EVERY visible field on
+ *  the page — text inputs, textareas, selects, and custom comboboxes — in a
+ *  single request to the AI provider.
+ *  Password fields are handled locally: they are always filled with the fixed
+ *  DEFAULT_PASSWORD and are NEVER sent to the AI provider.
+ * Shadow DOM is used for the toast notifications so host-page CSS can't leak in.
  * Every programmatic fill dispatches synthetic events (input + change, plus click
- * for custom dropdowns) so React/Vue/Angular detect the value change.
+ *  for custom dropdowns) so React/Vue/Angular detect the value change.
  */
 (() => {
   'use strict';
 
   const HOST_ID = 'ai-form-filler-root';
+  // `password` is intentionally NOT ignored: password inputs are collected and
+  // filled locally with a fixed default password (never sent to the AI).
   const IGNORED_INPUT_TYPES = new Set([
-    'password',
     'file',
     'hidden',
     'checkbox',
@@ -31,67 +33,9 @@
 
   let host = null;
   let shadow = null;
-  let singleBtn = null;
-  let fillAllBtn = null;
-  let activeField = null;
-  let hideTimer = null;
-  let isSingleLoading = false;
   let isBatchLoading = false;
 
   const SHARED_CSS = `
-    .aiff-btn {
-      pointer-events: auto;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
-      background: linear-gradient(135deg, #6e56cf, #3e63dd);
-      border: none;
-      border-radius: 999px;
-      box-shadow: 0 4px 16px rgba(62, 99, 221, 0.45);
-      cursor: pointer;
-      white-space: nowrap;
-      user-select: none;
-      transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease, filter 0.12s ease;
-    }
-    .aiff-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(62,99,221,0.55); }
-    .aiff-btn:disabled { opacity: 0.85; cursor: wait; }
-    .aiff-btn-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 15px;
-      height: 15px;
-      flex: 0 0 15px;
-    }
-    .aiff-btn-icon svg { width: 100%; height: 100%; display: block; }
-    .aiff-btn-text { white-space: nowrap; }
-    .aiff-btn.aiff-error { background: linear-gradient(135deg, #d13415, #e5484d); box-shadow: 0 4px 16px rgba(229,72,77,0.45); }
-    .aiff-btn.aiff-success { background: linear-gradient(135deg, #18794e, #30a46c); box-shadow: 0 4px 16px rgba(48,164,108,0.45); }
-    .aiff-single {
-      position: fixed;
-      display: none;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 12px;
-    }
-    .aiff-fill-all {
-      position: fixed;
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      right: 20px;
-      bottom: 20px;
-      padding: 11px 16px;
-      font-size: 13.5px;
-      background: linear-gradient(135deg, #18794e, #30a46c);
-      box-shadow: 0 8px 24px rgba(24, 121, 78, 0.45);
-      cursor: grab;
-    }
-    .aiff-fill-all .aiff-btn-icon { width: 14px; height: 14px; flex: 0 0 14px; }
-    .aiff-fill-all:active { cursor: grabbing; }
-    .aiff-fill-all:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(24,121,78,0.55); }
-
     /* ---- Toast notifications ---- */
     .aiff-toasts {
       position: fixed;
@@ -275,6 +219,7 @@ function showToast(options) {
 
   const duration = typeof cfg.duration === 'number' ? cfg.duration : kind === 'error' ? 9000 : 4500;
   if (duration > 0) setTimeout(() => dismissToast(toast), duration);
+  return toast;
 }
 
 function dismissToast(toast) {
@@ -390,61 +335,13 @@ function openOptionsPage() {
   }
 }
 
-// Status-only SVG glyphs for the floating buttons. The idle labels are plain
-  // text with no icon; these appear only while busy, on success, and on failure.
-  const ICONS = {
-    spinner:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>',
-    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
-    warning:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
-  };
+  // ---------- Shadow DOM setup (toasts only) ----------
 
-  /** Build button internals: an optional icon span plus a text span. */
-  function buildButtonContent(btn, iconSvg, label) {
-    btn.textContent = '';
-    // Idle state has no icon; busy/success/error states do.
-    if (iconSvg) {
-      const icon = document.createElement('span');
-      icon.className = 'aiff-btn-icon';
-      icon.innerHTML = iconSvg;
-      btn.appendChild(icon);
-    }
-    const text = document.createElement('span');
-    text.className = 'aiff-btn-text';
-    text.textContent = label;
-    btn.appendChild(text);
-  }
-
-  /** Update icon + label without rebuilding the button. */
-  function setButtonFace(btn, iconSvg, label) {
-    if (!btn) return;
-    const text = btn.querySelector('.aiff-btn-text');
-    if (!text) {
-      buildButtonContent(btn, iconSvg, label);
-      return;
-    }
-    const icon = btn.querySelector('.aiff-btn-icon');
-    // Icons come and go between states, so add or remove the span as needed.
-    if (iconSvg) {
-      if (icon) {
-        icon.innerHTML = iconSvg;
-      } else {
-        const fresh = document.createElement('span');
-        fresh.className = 'aiff-btn-icon';
-        fresh.innerHTML = iconSvg;
-        btn.insertBefore(fresh, text);
-      }
-    } else if (icon) {
-      icon.remove();
-    }
-    if (label != null) text.textContent = label;
-  }
-
-  // ---------- Shadow DOM setup ----------
-
+  // The only in-page UI is the toast stack. The floating "AI Fill" / "Fill All
+  // Fields" buttons were removed — filling is now triggered from the toolbar
+  // icon, and results are reported through these toasts.
   function ensureUI() {
-    if (host && shadow && singleBtn && fillAllBtn) return;
+    if (host && shadow && shadow.querySelector('[data-aiff-toasts]')) return;
 
     host = document.getElementById(HOST_ID);
     if (!host) {
@@ -463,155 +360,12 @@ function openOptionsPage() {
       shadow.appendChild(style);
     }
 
-    if (!shadow.querySelector('[data-aiff-single]')) {
-      singleBtn = document.createElement('button');
-      singleBtn.type = 'button';
-      singleBtn.className = 'aiff-btn aiff-single';
-      singleBtn.setAttribute('data-aiff-single', 'true');
-      buildButtonContent(singleBtn, null, 'AI Fill');
-      singleBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      singleBtn.addEventListener('click', onSingleFillClick);
-      trackPointerOnButton(singleBtn);
-      shadow.appendChild(singleBtn);
-    } else {
-      singleBtn = shadow.querySelector('[data-aiff-single]');
+    if (!shadow.querySelector('[data-aiff-toasts]')) {
+      const box = document.createElement('div');
+      box.className = 'aiff-toasts';
+      box.setAttribute('data-aiff-toasts', 'true');
+      shadow.appendChild(box);
     }
-
-    if (!shadow.querySelector('[data-aiff-fill-all]')) {
-      fillAllBtn = document.createElement('button');
-      fillAllBtn.type = 'button';
-      fillAllBtn.className = 'aiff-btn aiff-fill-all';
-      fillAllBtn.setAttribute('data-aiff-fill-all', 'true');
-      buildButtonContent(fillAllBtn, null, 'Fill All Fields');
-      fillAllBtn.title = 'Drag to move';
-      fillAllBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      fillAllBtn.addEventListener('click', onFillAllClickCapture, true);
-      shadow.appendChild(fillAllBtn);
-      makeFillAllDraggable();
-      restoreFillAllPosition();
-    } else {
-      fillAllBtn = shadow.querySelector('[data-aiff-fill-all]');
-    }
-  }
-
-  // ---------- Draggable Fill All button (position persisted per device) ----------
-
-  let fillAllDrag = null;
-  let suppressFillAllClick = false;
-
-  function fillAllPosKey() {
-    return 'fillAllPos';
-  }
-
-  function clampFillAllPos(right, bottom) {
-    const w = 190;
-    const h = 48;
-    return {
-      right: Math.min(Math.max(8, right), Math.max(8, window.innerWidth - w)),
-      bottom: Math.min(Math.max(8, bottom), Math.max(8, window.innerHeight - h))
-    };
-  }
-
-  function applyFillAllPos(right, bottom) {
-    if (!fillAllBtn) return;
-    const p = clampFillAllPos(right, bottom);
-    fillAllBtn.style.right = `${p.right}px`;
-    fillAllBtn.style.bottom = `${p.bottom}px`;
-    fillAllBtn.style.left = 'auto';
-    fillAllBtn.style.top = 'auto';
-  }
-
-  function restoreFillAllPosition() {
-    try {
-      chrome.storage.local.get([fillAllPosKey()], (result) => {
-        if (chrome.runtime.lastError) return;
-        const saved = result && result[fillAllPosKey()];
-        if (saved && typeof saved.right === 'number' && typeof saved.bottom === 'number') {
-          applyFillAllPos(saved.right, saved.bottom);
-        }
-      });
-    } catch {
-      /* storage unavailable — keep default corner */
-    }
-  }
-
-  function makeFillAllDraggable() {
-    if (!fillAllBtn || fillAllBtn.dataset.aiffDrag === '1') return;
-    fillAllBtn.dataset.aiffDrag = '1';
-    fillAllBtn.style.touchAction = 'none';
-
-    fillAllBtn.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
-      const rect = fillAllBtn.getBoundingClientRect();
-      fillAllDrag = {
-        startX: e.clientX,
-        startY: e.clientY,
-        startRight: window.innerWidth - rect.right,
-        startBottom: window.innerHeight - rect.bottom,
-        moved: false
-      };
-      try {
-        fillAllBtn.setPointerCapture(e.pointerId);
-      } catch {
-        /* noop */
-      }
-    });
-
-    fillAllBtn.addEventListener('pointermove', (e) => {
-      if (!fillAllDrag) return;
-      const dx = e.clientX - fillAllDrag.startX;
-      const dy = e.clientY - fillAllDrag.startY;
-      if (!fillAllDrag.moved && Math.hypot(dx, dy) > 6) fillAllDrag.moved = true;
-      if (fillAllDrag.moved) {
-        e.preventDefault();
-        applyFillAllPos(fillAllDrag.startRight - dx, fillAllDrag.startBottom - dy);
-      }
-    });
-
-    const endDrag = (e) => {
-      if (!fillAllDrag) return;
-      if (fillAllDrag.moved) {
-        suppressFillAllClick = true;
-        try {
-          const rect = fillAllBtn.getBoundingClientRect();
-          const pos = {
-            right: window.innerWidth - rect.right,
-            bottom: window.innerHeight - rect.bottom
-          };
-          chrome.storage.local.set({ [fillAllPosKey()]: pos }, () => {});
-        } catch {
-          /* noop */
-        }
-        setTimeout(() => {
-          suppressFillAllClick = false;
-        }, 50);
-      }
-      fillAllDrag = null;
-    };
-    fillAllBtn.addEventListener('pointerup', endDrag);
-    fillAllBtn.addEventListener('pointercancel', endDrag);
-
-    window.addEventListener('resize', () => {
-      if (!fillAllBtn) return;
-      try {
-        const rect = fillAllBtn.getBoundingClientRect();
-        applyFillAllPos(window.innerWidth - rect.right, window.innerHeight - rect.bottom);
-      } catch {
-        /* noop */
-      }
-    });
-  }
-
-  // Capture-phase click: swallows the click that ends a drag so a drag
-  // never triggers a fill.
-  function onFillAllClickCapture(e) {
-    if (suppressFillAllClick) {
-      e.stopPropagation();
-      e.preventDefault();
-      suppressFillAllClick = false;
-      return;
-    }
-    onFillAllClick();
   }
 
   // ---------- Field detection ----------
@@ -1068,140 +822,18 @@ function openOptionsPage() {
     return ctx;
   }
 
-  // ---------- Single-button positioning ----------
-
-  function positionSingleButton() {
-    if (!activeField || !singleBtn) return;
-    try {
-      const rect = activeField.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) {
-        hideSingleButton();
-        return;
-      }
-      singleBtn.style.display = 'inline-flex';
-      let top = rect.top - 38;
-      if (top < 4) top = rect.bottom + 6;
-      let left = rect.right - 96;
-      if (left < 4) left = 4;
-      singleBtn.style.top = `${Math.max(4, top)}px`;
-      singleBtn.style.left = `${Math.max(4, Math.min(left, window.innerWidth - 120))}px`;
-    } catch {
-      hideSingleButton();
-    }
-  }
-
-  function showSingleButton(field) {
-    ensureUI();
-    activeField = field;
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    setSingleState('idle');
-    positionSingleButton();
-  }
-
-  function hideSingleButton() {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    activeField = null;
-    if (singleBtn) {
-      singleBtn.style.display = 'none';
-      setSingleState('idle');
-    }
-  }
-
-  // The AI Fill button sits just outside the field's box, so travelling from
-// the field to the button always fires pointerout first. A grace window plus
-// pointer tracking on the button itself keeps it reachable and clickable.
-  let pointerOnButton = false;
-
-  function cancelHide() {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  }
-
-  function scheduleHide() {
-    cancelHide();
-    hideTimer = setTimeout(() => {
-      hideTimer = null;
-      if (isSingleLoading || pointerOnButton) return;
-      hideSingleButton();
-    }, 350);
-  }
-
-  function trackPointerOnButton(btn) {
-    if (!btn) return;
-    btn.addEventListener('pointerenter', () => {
-      pointerOnButton = true;
-      cancelHide();
-    });
-    btn.addEventListener('pointerleave', () => {
-      pointerOnButton = false;
-      // Keep it visible if the field is still focused; otherwise dismiss.
-      if (activeField && document.activeElement === activeField) return;
-      scheduleHide();
-    });
-  }
-
-  function setSingleState(state, text) {
-    if (!singleBtn) return;
-    singleBtn.classList.remove('aiff-error', 'aiff-success');
-    singleBtn.disabled = false;
-    if (state === 'loading') {
-      isSingleLoading = true;
-      singleBtn.disabled = true;
-      setButtonFace(singleBtn, ICONS.spinner, text || 'Generating…');
-    } else if (state === 'error') {
-      isSingleLoading = false;
-      singleBtn.classList.add('aiff-error');
-      setButtonFace(singleBtn, ICONS.warning, text || 'Failed');
-    } else if (state === 'success') {
-      isSingleLoading = false;
-      singleBtn.classList.add('aiff-success');
-      setButtonFace(singleBtn, ICONS.check, text || 'Filled!');
-    } else {
-      isSingleLoading = false;
-      setButtonFace(singleBtn, null, text || 'AI Fill');
-    }
-  }
-
-  function setFillAllState(state, text) {
-    if (!fillAllBtn) return;
-    fillAllBtn.classList.remove('aiff-error', 'aiff-success');
-    fillAllBtn.disabled = false;
-    if (state === 'loading') {
-      isBatchLoading = true;
-      fillAllBtn.disabled = true;
-      setButtonFace(fillAllBtn, ICONS.spinner, text || 'Filling all…');
-    } else if (state === 'error') {
-      isBatchLoading = false;
-      fillAllBtn.classList.add('aiff-error');
-      setButtonFace(fillAllBtn, ICONS.warning, text || 'Fill-all failed');
-    } else if (state === 'success') {
-      isBatchLoading = false;
-      fillAllBtn.classList.add('aiff-success');
-      setButtonFace(fillAllBtn, ICONS.check, text || 'All filled!');
-    } else {
-      isBatchLoading = false;
-      setButtonFace(fillAllBtn, null, text || 'Fill All Fields');
-    }
-  }
-
-  function promptForApiKey() {
+  function promptForApiKey(info) {
     if (isContextInvalidated()) {
       alertContextInvalidated();
       return;
     }
+    const freeExhausted = Boolean(info && info.freeExhausted);
     showToast({
       kind: 'warn',
-      title: 'No API key configured',
-      message:
-        'Pick a provider (Google Gemini, OpenAI, or a compatible API) and add your key to start filling forms.',
+      title: freeExhausted ? 'Free daily limit reached' : 'No API key configured',
+      message: freeExhausted
+        ? 'You have used all your free requests for today. Add your own API key in Settings to keep filling forms, or come back tomorrow for more free requests.'
+        : 'Add your own API key in Settings to fill forms. Free daily requests may have run out.',
       duration: 0,
       action: { label: 'Open Settings', onClick: openOptionsPage }
     });
@@ -1261,18 +893,8 @@ function openOptionsPage() {
     }
   }
 
-  function handleInvalidatedSingle() {
-    setSingleState('error', '⚠️ Reload page');
-    alertContextInvalidated();
-    setTimeout(() => {
-      if (activeField) setSingleState('idle');
-    }, 2500);
-  }
-
   function handleInvalidatedBatch() {
-    setFillAllState('error', '⚠️ Reload page');
     alertContextInvalidated();
-    setTimeout(() => setFillAllState('idle'), 2500);
   }
 
   // ---------- Framework-safe value insertion ----------
@@ -1960,119 +1582,59 @@ function rememberValues(values) {
   recentValues = [...fresh, ...recentValues].slice(0, MAX_REMEMBERED);
 }
 
-// ---------- Single fill ----------
+  // ---------- Password fields (filled locally, never sent to the AI) ----------
 
-  async function onSingleFillClick() {
-    if (!activeField || isSingleLoading) return;
-    const field = activeField;
-    const context = extractContext(field);
-    setSingleState('loading');
+  // Fixed password inserted into every password / confirm-password field.
+  // Change this constant to use a different default. It is filled purely
+  // locally and is never sent to the AI provider.
+  const DEFAULT_PASSWORD = 'Password123$';
 
-    // Closed custom dropdown: harvest real options first so the AI picks
-    // from the actual list instead of guessing.
-    if (context.kind === 'combobox' && (!context.options || context.options.length === 0)) {
+  function isPasswordField(el) {
+    return (
+      el &&
+      el.tagName &&
+      el.tagName.toLowerCase() === 'input' &&
+      (el.getAttribute('type') || '').toLowerCase() === 'password'
+    );
+  }
+
+  // Never overwrite "current / old / existing password" boxes — those expect the
+  // user's real password, not a generated one.
+  const CURRENT_PASSWORD_RE = /(current|old|existing|previous|confirm\s+old)\s*password/i;
+
+  function shouldSkipPasswordField(el) {
+    // `autocomplete="current-password"` is an explicit signal from the site.
+    if ((el.getAttribute('autocomplete') || '').toLowerCase() === 'current-password') {
+      return true;
+    }
+    const text = [
+      resolveLabel(el),
+      el.getAttribute('name'),
+      el.id,
+      el.getAttribute('placeholder'),
+      el.getAttribute('aria-label')
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return CURRENT_PASSWORD_RE.test(text);
+  }
+
+  // Fill every collected password field with the same default password, so
+  // paired fields (password + confirm password) always match.
+  function fillPasswordFields(passwordFields) {
+    const targets = (passwordFields || []).filter((el) => el && el.isConnected && isVisible(el));
+    if (targets.length === 0) return { filled: 0, password: '' };
+    const password = DEFAULT_PASSWORD;
+    let filled = 0;
+    for (const el of targets) {
+      if (shouldSkipPasswordField(el)) continue;
       try {
-        setSingleState('loading', '⏳ Reading options…');
-        const options = await harvestComboboxOptions(field);
-        if (options.length > 0) context.options = options;
-        setSingleState('loading');
-        field.focus();
+        if (setTextValue(el, password) !== false) filled += 1;
       } catch {
-        /* fall through with whatever context we have */
+        /* skip a failing field, keep going with the rest */
       }
     }
-
-    let response;
-    try {
-      response = await sendToBackground({
-type: 'AIFF_FILL',
-        context,
-        // Same variation controls as batch fill, so repeated clicks vary too.
-        randomize: randomizeValues,
-        avoidValues: recentValues.slice(0, 20)
-      });
-    } catch (err) {
-      if (isInvalidationError(err)) {
-        handleInvalidatedSingle();
-        return;
-      }
-      setSingleState('error', '⚠️ No response');
-      const friendly = friendlyApiError((err && err.message) || err);
-      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
-      return;
-    }
-
-    if (response && response.invalidated) {
-      handleInvalidatedSingle();
-      return;
-    }
-
-    if (!response || !response.ok) {
-      if (response && response.error === 'NO_API_KEY') {
-        setSingleState('error', '🔑 Set API key');
-        promptForApiKey();
-        return;
-      }
-      setSingleState('error', '⚠️ Failed');
-      const friendly = friendlyApiError(response && response.detail);
-      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
-      return;
-    }
-
-    try {
-      field.focus();
-      // Background may return an exact option `value` for dropdowns; prefer it.
-      const fillText =
-        response && typeof response.value === 'string' && response.value !== ''
-          ? response.value
-          : response.text;
-      const applied = await setFieldValue(field, fillText);
-      // Remember successful single fills so the next click can avoid repeating.
-      if (applied && randomizeValues && typeof fillText === 'string' && fillText.trim()) {
-        rememberValues({ single: fillText.trim() });
-      }
-      if (!applied) {
-        const kind = fieldKind(field);
-        const isDropdown = field.tagName.toLowerCase() === 'select' || kind === 'combobox';
-        setSingleState('error', '⚠️ No match');
-        if (isDropdown) {
-          showToast({
-            kind: 'warn',
-            title: 'No matching option',
-            message: `“${String(fillText).slice(0, 80)}” isn’t in this dropdown, so nothing was changed. Only options already in the list can be selected.`,
-            duration: 0
-          });
-        } else {
-          showToast({
-            kind: 'warn',
-            title: 'Nothing was filled',
-            message: 'This field could not be updated. Try again, or pick a different model in Settings.',
-            duration: 0
-          });
-        }
-        setTimeout(() => {
-          if (activeField === field) setSingleState('idle');
-        }, 2000);
-        return;
-      }
-      if (lastFillInfo.fallback) {
-        const chosen = lastFillInfo.chosen ? `“${lastFillInfo.chosen}”` : 'the first available option';
-        setSingleState('success', '✓ Closest match');
-        showToast({
-          kind: 'info',
-          title: 'Closest option selected',
-          message: `“${String(fillText).slice(0, 80)}” isn’t available here, so ${chosen} was selected instead.`
-        });
-      } else {
-        setSingleState('success');
-      }
-      positionSingleButton();
-      setTimeout(() => {
-        if (activeField === field) setSingleState('idle');
-      }, 1500);
-    } catch {
-      setSingleState('error', '⚠️ Insert failed');
-    }
+    return { filled, password };
   }
 
   // ---------- Batch fill ----------
@@ -2094,22 +1656,27 @@ type: 'AIFF_FILL',
       if (fillable.length >= MAX_BATCH_FIELDS) break;
     }
 
+    // Password inputs are filled locally with a generated strong password and
+    // are never sent to the AI provider, so keep them out of the model input.
+    const passwordFields = fillable.filter((el) => isPasswordField(el));
+    const aiFillable = fillable.filter((el) => !isPasswordField(el));
+
     // Group identical fields (repeated invoice rows etc.) so each gets a
     // distinct occurrence number: "item 2 of 3 with this label".
     const groupCounts = new Map();
     const groupKey = (ctx) =>
       [ctx.kind, ctx.label, ctx.name, ctx.placeholder].join('|').toLowerCase();
-    const contexts = fillable.map((el) => extractContext(el));
+    const contexts = aiFillable.map((el) => extractContext(el));
 
     // Harvest REAL options for closed custom dropdowns: open each popup,
     // read its options, close it. Without this the AI would have to guess.
     const previouslyFocused = document.activeElement;
     let harvested = 0;
-    for (let i = 0; i < fillable.length && harvested < MAX_HARVEST_FIELDS; i++) {
+    for (let i = 0; i < aiFillable.length && harvested < MAX_HARVEST_FIELDS; i++) {
       if (contexts[i].kind !== 'combobox') continue;
       if (contexts[i].options && contexts[i].options.length > 0) continue;
       try {
-        const options = await harvestComboboxOptions(fillable[i]);
+        const options = await harvestComboboxOptions(aiFillable[i]);
         if (options.length > 0) contexts[i].options = options;
         harvested++;
       } catch {
@@ -2135,87 +1702,130 @@ type: 'AIFF_FILL',
       const seen = (groupSeen.get(key) || 0) + 1;
       groupSeen.set(key, seen);
       const uid = `f${i}`;
-      const positionBits = [getPositionContext(fillable[i])];
+      const positionBits = [getPositionContext(aiFillable[i])];
       if (total > 1) positionBits.push(`item ${seen} of ${total} with the same label`);
       const position = positionBits.filter(Boolean).join('; ');
       if (position) ctx.position = position;
-      fillable[i].setAttribute('data-aiff-uid', uid);
+      aiFillable[i].setAttribute('data-aiff-uid', uid);
       fields.push({ uid, ...ctx, currentValue: (ctx.currentValue || '').slice(0, 200) });
-      elementByUid.set(uid, fillable[i]);
+      elementByUid.set(uid, aiFillable[i]);
     });
-    return { fields, elementByUid };
+    return { fields, elementByUid, passwordFields };
   }
 
-  async function onFillAllClick() {
-    if (isBatchLoading) return;
+  // Triggered by the toolbar icon (via background.js) OR directly from a page.
+  // Fills every AI field and every password field, then reports the result.
+  async function fillAllFields() {
+    if (isBatchLoading) return { ok: false, reason: 'busy' };
+    isBatchLoading = true;
     ensureUI();
-    setFillAllState('loading', '⏳ Reading fields…');
+    const progress = showToast({
+      kind: 'info',
+      title: 'Filling all fields…',
+      message: 'Reading the page and generating values.',
+      duration: 0
+    });
 
-    const { fields, elementByUid } = await collectFillableFields();
-    if (fields.length === 0) {
-      setFillAllState('error', '⚠️ No fields found');
-      showToast({
-        kind: 'warn',
-        title: 'No fillable fields found',
-        message:
-          'This page has no visible text inputs, textareas, or dropdowns. Password, file, and hidden fields are skipped by design.',
-        duration: 6000
-      });
-      setTimeout(() => setFillAllState('idle'), 2000);
-      return;
-    }
-
-    let response;
     try {
-      setFillAllState('loading', '⏳ Generating…');
-response = await sendToBackground({
-type: 'AIFF_FILL_ALL',
-        payload: {
-          fields,
-          randomize: randomizeValues,
-          // Previously generated values, so the model can avoid repeating them
-          avoidValues: recentValues.slice(0, 60),
-          page: { title: document.title || '', url: location.href || '' }
+      let collected;
+      try {
+        collected = await collectFillableFields();
+      } catch (err) {
+        dismissToast(progress);
+        showToast({
+          kind: 'error',
+          title: 'Could not read this page',
+          message: String((err && err.message) || err).slice(0, 300)
+        });
+        return { ok: false, reason: 'collect-failed' };
+      }
+
+      const { fields, elementByUid, passwordFields } = collected;
+
+      if (fields.length === 0 && passwordFields.length === 0) {
+        dismissToast(progress);
+        showToast({
+          kind: 'warn',
+          title: 'No fillable fields found',
+          message:
+            'This page has no visible text inputs, textareas, or dropdowns. File, hidden, checkbox, and radio fields are skipped by design.',
+          duration: 6000
+        });
+        return { ok: false, reason: 'no-fields' };
+      }
+
+      // Password boxes are filled locally with the fixed default password —
+      // this value is never sent to the AI provider.
+      const pw = fillPasswordFields(passwordFields);
+
+      // Password-only page: nothing for the AI to do.
+      if (fields.length === 0) {
+        dismissToast(progress);
+        if (pw.filled > 0) {
+          showToast({
+            kind: 'success',
+            title: 'Password filled',
+            message: `The default password was inserted into ${pw.filled} password field${pw.filled === 1 ? '' : 's'}.`,
+            duration: 4500
+          });
+        } else {
+          showToast({
+            kind: 'warn',
+            title: 'No password field filled',
+            message: 'Only current / old password fields were found, so nothing was changed.',
+            duration: 5000
+          });
         }
-      });
-    } catch (err) {
-      if (isInvalidationError(err)) {
+        return { ok: pw.filled > 0, filled: pw.filled };
+      }
+
+      let response;
+      try {
+        response = await sendToBackground({
+          type: 'AIFF_FILL_ALL',
+          payload: {
+            fields,
+            randomize: randomizeValues,
+            // Previously generated values, so the model can avoid repeating them
+            avoidValues: recentValues.slice(0, 60),
+            page: { title: document.title || '', url: location.href || '' }
+          }
+        });
+      } catch (err) {
+        dismissToast(progress);
+        if (isInvalidationError(err)) {
+          handleInvalidatedBatch();
+          return { ok: false, reason: 'invalidated' };
+        }
+        const friendly = friendlyApiError((err && err.message) || err);
+        showToast({ kind: 'error', title: friendly.title, message: friendly.message });
+        return { ok: false, reason: 'no-response' };
+      }
+
+      if (response && response.invalidated) {
+        dismissToast(progress);
         handleInvalidatedBatch();
-        return;
+        return { ok: false, reason: 'invalidated' };
       }
-      setFillAllState('error', '⚠️ No response');
-      const friendly = friendlyApiError((err && err.message) || err);
-      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
-      setTimeout(() => setFillAllState('idle'), 2000);
-      return;
-    }
 
-    if (response && response.invalidated) {
-      handleInvalidatedBatch();
-      return;
-    }
-
-    if (!response || !response.ok) {
-      if (response && response.error === 'NO_API_KEY') {
-        setFillAllState('error', '🔑 Set API key');
-        promptForApiKey();
-        setTimeout(() => setFillAllState('idle'), 2500);
-        return;
+      if (!response || !response.ok) {
+        dismissToast(progress);
+        if (response && response.error === 'NO_API_KEY') {
+          promptForApiKey(response);
+          return { ok: false, reason: 'no-key' };
+        }
+        const friendly = friendlyApiError(response && response.detail);
+        showToast({ kind: 'error', title: friendly.title, message: friendly.message });
+        return { ok: false, reason: 'api-error' };
       }
-      setFillAllState('error', '⚠️ Fill-all failed');
-      const friendly = friendlyApiError(response && response.detail);
-      showToast({ kind: 'error', title: friendly.title, message: friendly.message });
-      setTimeout(() => setFillAllState('idle'), 2500);
-      return;
-    }
 
-    try {
       const values = response.values || {};
-      let filled = 0;
+      let filled = pw.filled;
       const skippedLabels = [];
       const fallbackLabels = [];
       // Remember what we just generated so the next run can avoid it.
       if (randomizeValues) rememberValues(values);
+
       for (const [uid, text] of Object.entries(values)) {
         const el = elementByUid.get(uid);
         if (!el || !el.isConnected) continue;
@@ -2245,6 +1855,7 @@ type: 'AIFF_FILL_ALL',
           skippedLabels.push(fieldDescribe(el));
         }
       }
+
       // Clean up tracking attributes.
       for (const el of elementByUid.values()) {
         try {
@@ -2253,138 +1864,86 @@ type: 'AIFF_FILL_ALL',
           /* noop */
         }
       }
+
       const skipped = skippedLabels.length;
+      const pwNote =
+        pw.filled > 0
+          ? ` (including ${pw.filled} password field${pw.filled === 1 ? '' : 's'})`
+          : '';
+      const freeNote =
+        response.source === 'free' && typeof response.freeRemaining === 'number'
+          ? `\n\nFree requests left today: ${response.freeRemaining}.`
+          : '';
+
+      dismissToast(progress);
+
       if (filled === 0) {
-        setFillAllState('error', '⚠️ Nothing filled');
         showToast({
           kind: 'error',
           title: 'Nothing was filled',
           message:
-            skipped > 0
+            (skipped > 0
               ? `No field could be updated. ${skippedLabels.slice(0, 3).join('; ')}.`
-              : 'The model did not return usable values for the fields on this page. Try again or pick another model in Settings.',
+              : 'The model did not return usable values for the fields on this page. Try again or pick another model in Settings.') +
+            freeNote,
           duration: 0
         });
-      } else if (skipped > 0) {
-        setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
+        return { ok: false, reason: 'nothing-filled' };
+      }
+
+      if (skipped > 0) {
         showToast({
           kind: 'warn',
           title: `Filled ${filled} of ${filled + skipped} fields`,
-          message: `${skipped} dropdown${skipped === 1 ? '' : 's'} had no selectable options: ${skippedLabels.slice(0, 3).join('; ')}.`,
+          message: `${skipped} field${skipped === 1 ? '' : 's'} could not be matched. ${skippedLabels.slice(0, 3).join('; ')}.${freeNote}`,
           duration: 0
         });
       } else if (fallbackLabels.length > 0) {
-        setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
         showToast({
           kind: 'info',
-          title: `Filled ${filled} field${filled === 1 ? '' : 's'}`,
-          message: `${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} used the closest available option:\n${fallbackLabels.slice(0, 3).join('\n')}`,
+          title: `Filled ${filled} field${filled === 1 ? '' : 's'}${pwNote}`,
+          message: `${fallbackLabels.length} dropdown${fallbackLabels.length === 1 ? '' : 's'} used the closest available option:\n${fallbackLabels.slice(0, 3).join('\n')}${freeNote}`,
           duration: 0
         });
       } else {
-        setFillAllState('success', `✓ Filled ${filled} field${filled === 1 ? '' : 's'}!`);
         showToast({
           kind: 'success',
-          title: `Filled ${filled} field${filled === 1 ? '' : 's'}`,
-          message: 'Every field was updated successfully.',
-          duration: 3500
+          title: `Filled ${filled} field${filled === 1 ? '' : 's'}${pwNote}`,
+          message: `Every field was updated successfully.${freeNote}`,
+          duration: 4500
         });
       }
-      if (activeField) positionSingleButton();
-      setTimeout(() => setFillAllState('idle'), 2500);
-    } catch {
-      setFillAllState('error', '⚠️ Insert failed');
-      setTimeout(() => setFillAllState('idle'), 2500);
+      return { ok: true, filled };
+    } finally {
+      isBatchLoading = false;
     }
   }
 
-  // ---------- Listeners (delegated for SPAs) ----------
+  // ---------- Toolbar-icon trigger ----------
 
-  document.addEventListener(
-    'focusin',
-    (e) => {
-      if (isFillable(e.target)) showSingleButton(e.target);
-    },
-    true
-  );
-
-  // Hover support: reveal the button when the pointer enters a fillable field,
-  // even before it is focused. `pointerover` bubbles and is paired with
-  // `pointerout` for the matching hide.
-  document.addEventListener(
-    'pointerover',
-    (e) => {
-      if (!isFillable(e.target)) return;
-      // Ignore the synthetic events we dispatch while filling.
-      if (isBatchLoading || isSingleLoading) return;
-      showSingleButton(e.target);
-    },
-    true
-  );
-
-  document.addEventListener(
-    'pointerout',
-    (e) => {
-      if (!isFillable(e.target)) return;
-      // Moving within the same field should not dismiss the button.
-      const to = e.relatedTarget;
-      if (to && e.target.contains && e.target.contains(to)) return;
-      // Shadow-DOM events retarget to our host; moving onto the button must
-      // never dismiss it. The button's own pointerenter cancels the timer.
-      if (to && host && (to === host || (host.contains && host.contains(to)))) return;
-      scheduleHide();
-    },
-    true
-  );
-
-  document.addEventListener(
-    'focusout',
-    (e) => {
-      if (e.relatedTarget && host && e.relatedTarget === host) return;
-      scheduleHide();
-    },
-    true
-  );
-
-  window.addEventListener(
-    'scroll',
-    () => {
-      if (activeField && singleBtn && singleBtn.style.display !== 'none') {
-        positionSingleButton();
-      }
-    },
-    true
-  );
-
-  window.addEventListener('resize', () => {
-    if (activeField && singleBtn && singleBtn.style.display !== 'none') {
-      positionSingleButton();
-    }
+  // There are no in-page buttons: clicking the extension icon makes
+  // background.js send AIFF_FILL_ALL_FIELDS to the content script of the active
+  // tab, and everything is filled here.
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || message.type !== 'AIFF_FILL_ALL_FIELDS') return false;
+    // Reply immediately — background must not wait for the whole fill to finish.
+    // Everything the user needs to see is reported through toasts.
+    sendResponse({ ok: true });
+    fillAllFields().catch(() => {
+      /* fallback: errors are surfaced inside fillAllFields */
+    });
+    return false;
   });
 
-  document.addEventListener(
-    'mousedown',
-    (e) => {
-      if (host && (e.target === host || host.contains(e.target))) return;
-      if (activeField && e.target !== activeField && !activeField.contains(e.target)) {
-        if (!isFillable(e.target)) hideSingleButton();
-      }
-    },
-    true
-  );
-
-  // Boot: render the persistent Fill All button.
+  // Boot: create the toast host up front so the first click can report progress.
   ensureUI();
 
-  // Re-assert UI if aggressive page scripts remove our host.
+  // Re-assert our host if aggressive page scripts remove it.
   new MutationObserver(() => {
-    if (!document.getElementById(HOST_ID) || !singleBtn || !fillAllBtn) {
+    if (!document.getElementById(HOST_ID)) {
       host = null;
       shadow = null;
-      singleBtn = null;
-      fillAllBtn = null;
       ensureUI();
-      if (activeField) positionSingleButton();
     }
   }).observe(document.documentElement, { childList: true, subtree: false });
 })();
