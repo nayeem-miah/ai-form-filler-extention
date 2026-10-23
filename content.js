@@ -387,16 +387,50 @@ function openOptionsPage() {
     }
   }
 
+  // Links and submit buttons perform navigation/actions. They must never be
+  // used as dropdown triggers, otherwise opening a "dropdown" submits the form
+  // or follows a link and the page jumps away mid-fill.
+  function isNavigationControl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'a' && el.hasAttribute('href')) return true;
+    if (tag === 'button') {
+      const type = (el.getAttribute('type') || 'submit').toLowerCase();
+      if (type === 'submit' && el.closest && el.closest('form')) return true;
+    }
+    return false;
+  }
+
+  // Site-wide search boxes often navigate on input/change (instant search).
+  // Header/nav controls are page chrome (search, language, account), not part
+  // of the form being filled — typing into them can leave the page.
+  function isSiteSearchField(el) {
+    try {
+      const type = (el.getAttribute('type') || '').toLowerCase();
+      if (type === 'search') return true;
+      const role = (el.getAttribute('role') || '').toLowerCase();
+      if (role === 'searchbox') return true;
+      if (el.closest && el.closest('[role="search"], form[role="search"]')) return true;
+      if (el.closest && el.closest('header, nav')) return true;
+    } catch {
+      /* noop */
+    }
+    return false;
+  }
+
   // Custom JS/React dropdown triggers: Radix / Shadcn / Tailwind / headless-ui
   // popups are usually a button or div with role="combobox" or
   // aria-haspopup="listbox", or a class containing "select"/"dropdown".
   function isDropdownTrigger(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.disabled) return false;
+    // Never treat links/submit buttons as dropdowns (they navigate).
+    if (isNavigationControl(el)) return false;
     const role = el.getAttribute && el.getAttribute('role');
     if (role === COMBOBOX_ROLE) return true;
     const popup = el.getAttribute && el.getAttribute('aria-haspopup');
-    if (popup === 'listbox' || popup === 'menu') return true;
+    // `menu` is navigation/actions, not a selectable form value.
+    if (popup === 'listbox') return true;
     const tag = el.tagName.toLowerCase();
     if (
       hasSelectLikeClass(el) &&
@@ -495,8 +529,10 @@ function openOptionsPage() {
     'div[role="textbox"]',
     'div[role="searchbox"]',
     '[role="combobox"]',
-    '[aria-haspopup="listbox"]',
-    '[aria-haspopup="menu"]'
+    '[aria-haspopup="listbox"]'
+    // NOTE: [aria-haspopup="menu"] is deliberately excluded. Menus are
+    // navigation/action popups (account, share, nav), not form values, and
+    // clicking them can navigate away from the page being filled.
   ].join(', ');
 
   function isVisible(el) {
@@ -1035,27 +1071,58 @@ function openOptionsPage() {
     return true;
   }
 
+  // Pointer-like click that never performs the browser default action.
+  // Dropdown triggers and options can be <a href> or <button type="submit">;
+  // letting the default run navigates or submits the page mid-fill. Site
+  // handlers still receive the events; preventDefault only cancels the default.
   function clickNode(node) {
+    const opts = { bubbles: true, cancelable: true, view: window };
     try {
-      node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      node.dispatchEvent(new MouseEvent('mousedown', opts));
     } catch {
       /* noop */
     }
     try {
-      node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      node.dispatchEvent(new MouseEvent('mouseup', opts));
     } catch {
       /* noop */
     }
     try {
-      node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      const clickEvent = new MouseEvent('click', opts);
+      const cancelDefault = (event) => {
+        if (event === clickEvent) event.preventDefault();
+      };
+      document.addEventListener('click', cancelDefault, true);
+      try {
+        node.dispatchEvent(clickEvent);
+      } finally {
+        document.removeEventListener('click', cancelDefault, true);
+      }
     } catch {
       /* noop */
     }
-    try {
-      if (typeof node.click === 'function') node.click();
-    } catch {
-      /* noop */
-    }
+    // Deliberately no node.click(): it fires a second click and lets the
+    // default action navigate/submit.
+  }
+
+  // Block form submissions caused by our synthetic input/change events. Some
+  // fields have inline handlers like onchange="this.form.submit()" which would
+  // otherwise navigate away right after being filled.
+  let submitGuardUntil = 0;
+
+  function onFillSubmit(event) {
+    if (Date.now() < submitGuardUntil) event.preventDefault();
+  }
+  document.addEventListener('submit', onFillSubmit, true);
+
+  function beginSubmitGuard() {
+    // Hold submissions while our synthetic events are being applied.
+    submitGuardUntil = Number.POSITIVE_INFINITY;
+  }
+
+  function endSubmitGuard() {
+    // Stay on briefly: some sites submit on a debounce after input/change.
+    submitGuardUntil = Date.now() + 1500;
   }
 
   // Locate the filter/search box inside an open dropdown popup
@@ -1222,11 +1289,8 @@ function openOptionsPage() {
         }
       }
     }
-    try {
-      if (typeof trigger.click === 'function') trigger.click();
-    } catch {
-      /* noop */
-    }
+    // No click here: the caller already clicked, and a second click can toggle
+    // the popup back closed (or navigate, before clickNode was hardened).
   }
 
   // Poll for popup options (portals animate in; filters re-render).
@@ -1335,7 +1399,7 @@ function openOptionsPage() {
     if (tag === 'input' && trigger.readOnly) {
       const parentTrigger =
         (trigger.closest &&
-          trigger.closest('[role="combobox"], [aria-haspopup="listbox"], [aria-haspopup="menu"], button')) ||
+          trigger.closest('[role="combobox"], [aria-haspopup="listbox"], button')) ||
         null;
       if (parentTrigger && parentTrigger !== trigger) {
         return setComboboxValue(parentTrigger, strTarget);
@@ -1645,6 +1709,9 @@ function rememberValues(values) {
 
     for (const el of candidates) {
       if (!isFillable(el) || !isVisible(el)) continue;
+      // Skip site search / header-nav controls: typing into them can navigate
+      // to another page (instant search, language switch, account menu).
+      if (isSiteSearchField(el)) continue;
       // Skip hidden honeypot traps (display-friendly but off-screen).
       try {
         const rect = el.getBoundingClientRect();
@@ -1755,8 +1822,15 @@ function rememberValues(values) {
       }
 
       // Password boxes are filled locally with the fixed default password —
-      // this value is never sent to the AI provider.
-      const pw = fillPasswordFields(passwordFields);
+      // this value is never sent to the AI provider. The submit guard keeps a
+      // site's change handler from submitting the form as we type.
+      beginSubmitGuard();
+      let pw;
+      try {
+        pw = fillPasswordFields(passwordFields);
+      } finally {
+        endSubmitGuard();
+      }
 
       // Password-only page: nothing for the AI to do.
       if (fields.length === 0) {
@@ -1826,34 +1900,41 @@ function rememberValues(values) {
       // Remember what we just generated so the next run can avoid it.
       if (randomizeValues) rememberValues(values);
 
-      for (const [uid, text] of Object.entries(values)) {
-        const el = elementByUid.get(uid);
-        if (!el || !el.isConnected) continue;
-        if (typeof text !== 'string' || text === '') continue;
-        try {
-          // Dropdowns resolve to false only when the popup had no usable
-          // option at all — those are counted as skipped, never force-filled.
-          lastFillInfo = { applied: false, reason: '' };
-          const applied = await setFieldValue(el, text);
-          if (applied) {
-            filled += 1;
-            // Requested value wasn't in the list, so an existing option was
-            // chosen instead — surface that so the user knows why.
-            if (lastFillInfo.fallback) {
-              const chosen = lastFillInfo.chosen ? `"${lastFillInfo.chosen}"` : 'first available option';
-              fallbackLabels.push(
-                `${fieldDescribe(el)}: "${String(text).slice(0, 40)}" not in list → selected ${chosen}`
-              );
+      beginSubmitGuard();
+      try {
+        for (const [uid, text] of Object.entries(values)) {
+          const el = elementByUid.get(uid);
+          if (!el || !el.isConnected) continue;
+          if (typeof text !== 'string' || text === '') continue;
+          try {
+            // Dropdowns resolve to false only when the popup had no usable
+            // option at all — those are counted as skipped, never force-filled.
+            lastFillInfo = { applied: false, reason: '' };
+            const applied = await setFieldValue(el, text);
+            if (applied) {
+              filled += 1;
+              // Requested value wasn't in the list, so an existing option was
+              // chosen instead — surface that so the user knows why.
+              if (lastFillInfo.fallback) {
+                const chosen = lastFillInfo.chosen
+                  ? `"${lastFillInfo.chosen}"`
+                  : 'first available option';
+                fallbackLabels.push(
+                  `${fieldDescribe(el)}: "${String(text).slice(0, 40)}" not in list → selected ${chosen}`
+                );
+              }
+            } else {
+              const why = lastFillInfo.reason ? ` (${lastFillInfo.reason})` : '';
+              const wanted = `wanted "${String(text).slice(0, 40)}"`;
+              skippedLabels.push(`${fieldDescribe(el)} — ${wanted}${why}`);
             }
-          } else {
-            const why = lastFillInfo.reason ? ` (${lastFillInfo.reason})` : '';
-            const wanted = `wanted "${String(text).slice(0, 40)}"`;
-            skippedLabels.push(`${fieldDescribe(el)} — ${wanted}${why}`);
+          } catch {
+            /* skip failing field, continue with the rest */
+            skippedLabels.push(fieldDescribe(el));
           }
-        } catch {
-          /* skip failing field, continue with the rest */
-          skippedLabels.push(fieldDescribe(el));
         }
+      } finally {
+        endSubmitGuard();
       }
 
       // Clean up tracking attributes.
